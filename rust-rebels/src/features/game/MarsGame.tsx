@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { SUITS, type SuitId } from "./suits";
 import { MarsEngine, type Crew, type DroneMode, type HudState, type RoverMode, type ViewMode } from "./engine";
 import "./game.css";
 
@@ -96,6 +97,7 @@ export function MarsGame() {
   const [info, setInfo] = useState(false);
   const [draft, setDraft] = useState("");
   const [crew, setCrew] = useState<Crew>("superjar");
+  const [wardrobe, setWardrobe] = useState(false);
   const chat = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -120,6 +122,33 @@ export function MarsGame() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [started]);
+
+  // The suit choice is remembered on this device. Storage can be blocked; the game works without it.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("marswalk-suit");
+      if (saved && SUITS.some((s) => s.id === saved)) void engine.current?.setSuit(saved as SuitId);
+    } catch { /* keep the default suit */ }
+  }, []);
+  const suit = hud?.suit ?? "rebel"; // the engine reports which suit is on
+  const wear = (id: SuitId) => {
+    void engine.current?.setSuit(id);
+    try { window.localStorage.setItem("marswalk-suit", id); } catch { /* not saved */ }
+  };
+  const suitPicker = (
+    <div className="mg-suits" role="radiogroup" aria-label="Suit">
+      {(["Fancy", "NASA"] as const).map((kind) => (
+        <div key={kind}>
+          <span>{kind === "NASA" ? "REAL · NASA MODELS" : "FANCY"}</span>
+          {SUITS.filter((s) => s.kind === kind).map((s) => (
+            <button key={s.id} type="button" role="radio" aria-checked={suit === s.id} className={suit === s.id ? "mg-on" : ""} onClick={() => wear(s.id)}>
+              <b>{s.name}</b><i>{s.note}</i>
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 
   const send = (text: string) => {
     engine.current?.command(text, crew);
@@ -276,6 +305,7 @@ export function MarsGame() {
             <button type="button" onClick={() => engine.current?.triggerStorm()}><kbd>T</kbd>Storm</button>
             <button type="button" className={hud?.sound ? "mg-on" : ""} aria-pressed={hud?.sound ?? true} onClick={() => engine.current?.setSound(!hud?.sound)}><kbd>N</kbd>Sound {hud?.sound ? "on" : "off"}</button>
             <button type="button" onClick={() => engine.current?.resetMission()}><kbd>R</kbd>Restart</button>
+            <button type="button" className={wardrobe ? "mg-on" : ""} aria-expanded={wardrobe} onClick={() => { setWardrobe(!wardrobe); if (!wardrobe && hud?.view === "fpv") engine.current?.setView("tpv"); }}>Suit</button>
             <button type="button" onClick={() => setInfo(true)}>Data</button>
           </div>
           {hud?.control === "rover" && <p className="mg-hint mg-hint-remote">REMOTE · ROVER — W S drive · A D steer · Shift fast · mouse looks · V switch view · Q hand back</p>}
@@ -287,6 +317,14 @@ export function MarsGame() {
           )}
           {hud?.control === "astronaut" && !hud?.locked && !hud?.autopilot && hud?.view !== "map" && <p className="mg-hint">Click the scene to look around · WASD move · Shift run · Space jump · V switch view</p>}
         </div>
+
+        {wardrobe && (
+          <section className="mg-panel mg-wardrobe" aria-label="Choose a suit">
+            <header><b>SUIT</b><span><button type="button" className="mg-map-close" onClick={() => setWardrobe(false)}>Close</button></span></header>
+            {suitPicker}
+            <p className="mg-wardrobe-credit">{SUITS.find((s) => s.id === suit)?.credit}</p>
+          </section>
+        )}
 
         {hud?.canDock && hud.phase !== "scout" && (
           <p className="mg-prompt"><kbd>E</kbd> {hud.docked ? "Unplug from the rover" : "Plug into the rover: oxygen and battery"}</p>
@@ -304,6 +342,7 @@ export function MarsGame() {
 
       {!started && (
         <div className="mg-start">
+          <div className="mg-start-poster" aria-hidden="true" />
           <p className="mg-eyebrow">Rust Rebels · NASA Space Apps 2026 · Seoul</p>
           <div className="mg-title">MARS<span>WALK</span></div>
           <p className="mg-lede">Jezero crater, delta front. SuperJar scouts the route. You walk it. Then the Sun interrupts.</p>
@@ -316,6 +355,12 @@ export function MarsGame() {
             </div>
           ) : (
             <p className="mg-loading">{status}…</p>
+          )}
+          {ready && !error && (
+            <div className="mg-start-suit">
+              <p>Suit</p>
+              {suitPicker}
+            </div>
           )}
           <ul className="mg-keys">
             <li><kbd>W A S D</kbd> move</li><li><kbd>Mouse</kbd> look</li><li><kbd>Shift</kbd> run</li><li><kbd>Space</kbd> jump</li>
@@ -331,13 +376,13 @@ export function MarsGame() {
             <b>What is real, what is simulated</b>
             <dl>
               <dt>Real NASA data</dt>
-              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Astronaut: NASA&apos;s Z2 planetary-surface prototype suit, from NASA 3D Resources. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, the SuperCam laser (sol 12), played when SuperJar flags a hazard, and Perseverance driving (sol 16), played when the rover moves (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
+              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, the SuperCam laser (sol 12), played when SuperJar flags a hazard, and Perseverance driving (sol 16), played when the rover moves (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
               <dt>Derived by us</dt>
               <dd>Slope, route, sky fraction and shelter spots, all computed from the HiRISE elevation. Dose rate shown is RAD × sky fraction. That is a geometric estimate, not a dose calculation.</dd>
               <dt>Simulated</dt>
               <dd>New boulders, sand and rockfall; SuperJar&apos;s detections and its flight speed on orders; the rover driving itself, following you and recharging your suit, remote control of the rover and SuperJar, its speed (about 100 times the real rover&apos;s), and the small bumps its suspension rides over, which the 4 m terrain cannot show; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>The rover is shown as the storm shelter because the pitch says so; the game applies no dose reduction there, since we have no figure for it. The chat with SuperJar and the rover is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. NASA&apos;s rover model is also static: we cut its wheel mesh into six wheels that spin and steer and split the suspension into two sides that rock; the smaller bogie joints do not move. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
+              <dd>The rover is shown as the storm shelter because the pitch says so; the game applies no dose reduction there, since we have no figure for it. The chat with SuperJar and the rover is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. Suits: the three NASA suits (Z2, Mark III, ACES) are NASA&apos;s own models from NASA 3D Resources, which have no joints. To make them walk we fit the Quaternius astronaut&apos;s skeleton inside each suit and play that artist&apos;s animations on the body and legs; the arms stay in the pose NASA modelled. The fancy suits are game art: Astronaut by Quaternius (public domain), with the artist&apos;s own animations and our colours, and Rigged Astronaut by J-Toastie (CC BY 3.0). The walk on the Classic suit is our own animation of ordinary gait. None of the walks is motion data from real astronauts. NASA&apos;s rover model is also static: we cut its wheel mesh into six wheels that spin and steer and split the suspension into two sides that rock; the smaller bogie joints do not move. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>

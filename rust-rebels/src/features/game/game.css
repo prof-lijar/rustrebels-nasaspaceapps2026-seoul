@@ -181,3 +181,37 @@
 .mg-hint-remote { color: var(--mg-c); border: 1px solid var(--mg-c); }
 /* Short windows: show fewer log lines so the chat box stays clear of the suit panel. */
 @media (max-height: 760px) { .mg-left .mg-log li:nth-last-child(n+4) { display: none; } }
+
+/* Suit picker */
+.mg-suits { display: grid; gap: 8px; }
+.mg-suits > div { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+.mg-suits > div > span { flex-basis: 100%; font-size: 9px; color: #a59d90; }
+.mg-suits button { display: grid; gap: 2px; padding: 6px 9px; text-align: left; background: #0008; border: 1px solid #f4ede244; pointer-events: auto; }
+.mg-suits button b { font-size: 11px; }
+.mg-suits button i { font-style: normal; font-size: 9px; color: #a59d90; }
+.mg-suits button:hover { border-color: var(--mg-ink); }
+.mg-suits .mg-on { border-color: #f38d5a; }
+.mg-suits .mg-on b { color: #f38d5a; }
+.mg-suits button:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
+/* In play the picker is a slim strip under the compass, so the astronaut stays in view while you choose. */
+.mg-wardrobe { left: 50%; top: 96px; transform: translateX(-50%); width: max-content; max-width: min(560px, 44vw); padding: 8px 10px; pointer-events: auto; z-index: 3; }
+.mg-wardrobe header { margin-bottom: 6px; }
+.mg-wardrobe .mg-suits { gap: 5px; }
+.mg-wardrobe .mg-suits button i { display: none; }
+.mg-wardrobe .mg-suits button { padding: 4px 8px; }
+.mg-wardrobe-credit { margin: 8px 0 0; font-size: 9px; color: #a59d90; }
+.mg-start-suit { display: grid; gap: 6px; max-width: 640px; }
+.mg-start-suit > p { margin: 0; font: 700 11px "Courier New", monospace; letter-spacing: .12em; text-transform: uppercase; color: #35e0c2; }
+.mg-start-suit .mg-suits button { font-family: "Courier New", monospace; color: #f4ede2; }
+
+/* Team poster on the right of the start screen, faded into the scene so the text stays readable. */
+.mg-start-poster { position: absolute; top: 0; right: 0; bottom: 0; width: min(48vw, 66.7vh); background: url("/images/rust-rebels-poster.png") center / cover no-repeat; opacity: .92; pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 42%), linear-gradient(180deg, #000 0%, #000 82%, transparent 100%); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 42%), linear-gradient(180deg, #000 0%, #000 82%, transparent 100%); mask-composite: intersect; }
+.mg-start > :not(.mg-start-poster) { position: relative; z-index: 1; }
+@media (min-width: 901px) {
+  .mg-start .mg-start-suit, .mg-start .mg-lede { max-width: min(640px, calc(86vw - min(40vw, 56vh))); }
+  .mg-start .mg-keys { grid-template-columns: repeat(3, max-content); white-space: nowrap; gap: 6px 22px; }
+  .mg-start { gap: 14px; }
+}
+@media (max-width: 900px) { .mg-start-poster { display: none; } }
