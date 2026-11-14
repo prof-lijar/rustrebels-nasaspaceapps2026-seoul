@@ -22,9 +22,12 @@ const STORM_REPLAY = 600; // RAD seconds per real second during the storm
 const STORM_AT_PROGRESS = 0.3;
 const SCOUT_SPEED = 80;
 const SENSOR_RANGE = 70;
+const DRONE_SPEED = 30; // m/s on orders
+const MAP_RANGE_WIDE = 650; // metres from centre to edge of the expanded map
 
 export type ViewMode = "fpv" | "tpv" | "map";
 export type Band = "green" | "amber" | "red";
+export type DroneMode = "route" | "recall" | "goto" | "hold";
 export type Phase = "scout" | "walk" | "storm" | "sheltered" | "arrived";
 
 export type HudState = {
@@ -53,7 +56,10 @@ export type HudState = {
   elevation: number;
   lon: number;
   lat: number;
-  log: { t: number; text: string; tone: "info" | "warn" | "alert" }[];
+  log: { t: number; text: string; tone: "info" | "warn" | "alert"; who?: "you" }[];
+  droneMode: DroneMode;
+  droneDist: number;
+  mapExpanded: boolean;
   hazardsFound: number;
   hazardsTotal: number;
   uncertainty: number;
@@ -139,6 +145,10 @@ export class MarsEngine {
   private drone = new THREE.Group();
   private rotors: THREE.Object3D[] = [];
   private droneDist = 0;
+  private droneMode: DroneMode = "route";
+  private droneTarget: Vec2 = { x: 0, z: 0 };
+  private droneArrived = false;
+  private mapExpanded = false;
   private rad: RadPoint[] = [];
   private baseline = 11.15;
   private onsetIdx = 0;
@@ -536,7 +546,10 @@ export class MarsEngine {
     this.log = [];
     this.shelter = undefined;
     this.droneDist = 0;
+    this.droneMode = "route";
+    this.droneArrived = false;
     this.pos.set(this.base.x, this.world.heightAt(this.base.x, this.base.z), this.base.z);
+    this.drone.position.set(this.base.x, this.pos.y + 3, this.base.z); // SuperJar launches from the rover base
     this.vy = 0;
     this.yaw = Math.atan2(this.goal.x - this.base.x, -(this.goal.z - this.base.z));
     this.pitch = -0.05;
@@ -550,6 +563,7 @@ export class MarsEngine {
 
     this.addMarker(() => new THREE.Vector3(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z) + 4, this.goal.z), "SCIENCE STOP", "mg-mk-goal", () => this.phase !== "storm" && this.phase !== "sheltered");
     this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map");
+    this.addMarker(() => new THREE.Vector3(this.droneTarget.x, this.world.heightAt(this.droneTarget.x, this.droneTarget.z) + 3, this.droneTarget.z), "SUPERJAR TARGET", "mg-mk-drone", () => this.droneMode === "goto" || this.droneMode === "hold");
 
     this.say("SuperJar launching. Scouting the route before you step out.", "info");
     this.say(`Base map: HiRISE, ${Math.round(this.initialRouteLen)} m to the science stop.`, "info");
@@ -657,8 +671,8 @@ export class MarsEngine {
     return mk;
   }
 
-  private say(text: string, tone: "info" | "warn" | "alert"): void {
-    this.log.push({ t: this.realT, text, tone });
+  private say(text: string, tone: "info" | "warn" | "alert", who?: "you"): void {
+    this.log.push({ t: this.realT + this.log.length * 1e-6, text, tone, who });
     if (this.log.length > 30) this.log.shift();
   }
 
@@ -698,8 +712,9 @@ export class MarsEngine {
 
   private bindInput(): void {
     const el = this.renderer.domElement;
+    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
     const down = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (e.repeat || typing(e)) return;
       const k = e.code;
       this.keys.add(k);
       if (k === "KeyV") this.setView(this.view === "fpv" ? "tpv" : "fpv");
@@ -711,6 +726,8 @@ export class MarsEngine {
       if (k === "KeyT") this.triggerStorm();
       if (k === "KeyR") this.resetMission();
       if (k === "KeyN") this.setSound(!this.soundOn);
+      if (k === "KeyG") this.setMapExpanded(!this.mapExpanded);
+      if (k === "KeyB") this.recallDrone();
       if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot) this.setAutopilot(false);
       if (k === "Space" || k.startsWith("Arrow")) e.preventDefault();
     };
@@ -929,23 +946,194 @@ export class MarsEngine {
 
   private moveDrone(dt: number): void {
     const len = pathLength(this.route);
-    if (this.phase === "scout") {
-      this.droneDist = Math.min(this.initialRouteLen, this.droneDist + SCOUT_SPEED * dt);
+    let want: Vec2, alt: number, cap: number;
+    if (this.droneMode === "route") {
+      if (this.phase === "scout") {
+        this.droneDist = Math.min(this.initialRouteLen, this.droneDist + SCOUT_SPEED * dt);
+      } else {
+        const ahead = Math.min(len, progressAlong(this.route, { x: this.pos.x, z: this.pos.z }) + 34);
+        this.droneDist += (ahead - this.droneDist) * Math.min(1, dt * 1.6);
+      }
+      want = pointAlong(this.route, Math.min(len, this.droneDist));
+      alt = this.phase === "scout" ? 14 : 7;
+      cap = this.phase === "scout" ? 200 : DRONE_SPEED * 1.5;
+    } else if (this.droneMode === "recall") {
+      want = { x: this.pos.x + Math.sin(this.yaw) * 4 + Math.cos(this.yaw) * 1.5, z: this.pos.z - Math.cos(this.yaw) * 4 + Math.sin(this.yaw) * 1.5 };
+      alt = 2.6;
+      cap = DRONE_SPEED;
     } else {
-      const ahead = Math.min(len, progressAlong(this.route, { x: this.pos.x, z: this.pos.z }) + 34);
-      this.droneDist += (ahead - this.droneDist) * Math.min(1, dt * 1.6);
+      want = this.droneTarget;
+      alt = 10;
+      cap = DRONE_SPEED;
     }
-    const p = pointAlong(this.route, Math.min(len, this.droneDist));
-    const alt = this.phase === "scout" ? 14 : 7;
-    const ty = this.world.heightAt(p.x, p.z) + alt + Math.sin(this.realT * 2.1) * 0.35;
     const prev = this.drone.position.clone();
-    this.drone.position.lerp(new THREE.Vector3(p.x, ty, p.z), Math.min(1, dt * 4));
+    const dx = want.x - prev.x, dz = want.z - prev.z;
+    const d = Math.hypot(dx, dz);
+    const stepLen = Math.min(d, cap * dt);
+    if (d > 1e-4) {
+      this.drone.position.x += (dx / d) * stepLen;
+      this.drone.position.z += (dz / d) * stepLen;
+    }
+    // Climb for transit so the drone clears ridges, then settle to the working height.
+    const cruise = d > 40 ? Math.max(alt, 18) : alt;
+    const ty = this.world.heightAt(this.drone.position.x, this.drone.position.z) + cruise + Math.sin(this.realT * 2.1) * 0.35;
+    this.drone.position.y += (ty - this.drone.position.y) * Math.min(1, dt * 3);
     const mv = this.drone.position.clone().sub(prev);
-    if (mv.lengthSq() > 1e-5) this.drone.rotation.y = Math.atan2(mv.x, mv.z);
+    if (mv.x * mv.x + mv.z * mv.z > 1e-5) this.drone.rotation.y = Math.atan2(mv.x, mv.z);
     this.rotors.forEach((r, i) => { r.rotation.y += dt * (i % 2 ? -60 : 60); });
     for (const h of this.hazards) {
       if (!h.found && Math.hypot(h.x - this.drone.position.x, h.z - this.drone.position.z) < SENSOR_RANGE) this.detect(h);
     }
+    if (!this.droneArrived && d < 2.5 && this.droneMode !== "route") {
+      this.droneArrived = true;
+      if (this.droneMode === "goto") {
+        this.droneMode = "hold";
+        this.say(this.surveyReport(this.droneTarget), "info");
+      } else if (this.droneMode === "recall") {
+        this.say("SuperJar is back with you.", "info");
+      }
+    }
+  }
+
+  // --- SuperJar commands ----------------------------------------------------
+
+  private lonLat(p: Vec2): { lon: number; lat: number } {
+    const b = this.meta.bounds_lonlat;
+    return { lon: b.west + ((p.x + HALF) / SITE_M) * (b.east - b.west), lat: b.north - ((p.z + HALF) / SITE_M) * (b.north - b.south) };
+  }
+
+  /** What SuperJar reports on arriving somewhere. Every figure comes from the terrain data or the hazard list. */
+  private surveyReport(p: Vec2): string {
+    const { lon, lat } = this.lonLat(p);
+    const near = this.hazards.filter((h) => h.found && Math.hypot(h.x - p.x, h.z - p.z) < SENSOR_RANGE);
+    const walk = solveRoute(this.world, { x: this.pos.x, z: this.pos.z }, p, this.blockers());
+    const slope = this.world.slopeAt(p.x, p.z);
+    return [
+      `On station at ${lat.toFixed(4)}°N ${lon.toFixed(4)}°E.`,
+      `Slope ${slope.toFixed(0)}°${slope > MAX_SLOPE_DEG ? ", too steep to walk" : ""}, sky visible ${Math.round(this.world.skyAt(p.x, p.z) * 100)}%.`,
+      near.length ? `${near.length} flagged change${near.length > 1 ? "s" : ""} within ${SENSOR_RANGE} m: ${near.map((h) => h.label.toLowerCase()).join(", ")}.` : `No changes within ${SENSOR_RANGE} m.`,
+      walk ? `Walkable route from you: ${Math.round(pathLength(walk))} m.` : "No walkable route from you under 25°.",
+    ].join(" ");
+  }
+
+  private scoutBusy(): boolean {
+    if (this.phase !== "scout") return false;
+    this.say("Scout pass in progress. I can take orders once the route is checked.", "info");
+    return true;
+  }
+
+  /** Sends SuperJar to a point on the map. */
+  sendDrone(x: number, z: number, label?: string): void {
+    if (this.scoutBusy()) return;
+    if (!this.world.inBounds(x, z, 20)) {
+      this.say("That point is outside the mapped site.", "warn");
+      return;
+    }
+    this.droneTarget = { x, z };
+    this.droneMode = "goto";
+    this.droneArrived = false;
+    const d = Math.hypot(x - this.drone.position.x, z - this.drone.position.z);
+    this.say(`Heading to ${label ?? "the marked point"}, ${Math.round(d)} m. About ${Math.ceil(d / DRONE_SPEED)} s.`, "info");
+  }
+
+  recallDrone(): void {
+    if (this.scoutBusy()) return;
+    this.droneMode = "recall";
+    this.droneArrived = false;
+    const d = Math.hypot(this.pos.x - this.drone.position.x, this.pos.z - this.drone.position.z);
+    this.say(`Coming back to you, ${Math.round(d)} m.`, "info");
+  }
+
+  escortDrone(): void {
+    if (this.scoutBusy()) return;
+    this.droneMode = "route";
+    this.droneDist = progressAlong(this.route, { x: this.drone.position.x, z: this.drone.position.z });
+    this.say("Back on the route, scouting ahead of you.", "info");
+  }
+
+  /**
+   * Plain-language orders and questions. Rule-based: every answer is read from the
+   * mission state, so SuperJar cannot invent a reading.
+   */
+  command(input: string): void {
+    const text = input.trim();
+    if (!text) return;
+    this.say(text, "info", "you");
+    const q = text.toLowerCase();
+    const has = (re: RegExp) => re.test(q);
+    const here = { x: this.pos.x, z: this.pos.z };
+    const dist = (p: Vec2) => Math.hypot(p.x - here.x, p.z - here.z);
+    const order = has(/\b(go|send|fly|check|scout|look|survey|inspect|head|move)\b/);
+
+    const coords = q.match(/(-?\d+\.\d+)\s*°?\s*n?[ ,]+(-?\d+\.\d+)/);
+    if (coords) {
+      const b = this.meta.bounds_lonlat;
+      const lat = parseFloat(coords[1]), lon = parseFloat(coords[2]);
+      const x = ((lon - b.west) / (b.east - b.west)) * SITE_M - HALF, z = ((b.north - lat) / (b.north - b.south)) * SITE_M - HALF;
+      return this.sendDrone(x, z, `${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`);
+    }
+    if (has(/\b(come back|comeback|return|recall|to me|come here|back to me|call back)\b/)) return this.recallDrone();
+    if (has(/\b(escort|follow|resume|lead|scout ahead|go ahead|carry on)\b/)) return this.escortDrone();
+    if (has(/\b(stop|hold|stay|hover|wait)\b/)) {
+      if (this.scoutBusy()) return;
+      this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
+      this.droneMode = "hold";
+      this.droneArrived = true;
+      return this.say("Holding position.", "info");
+    }
+    const named = this.shelters.find((s) => s.id !== "ROVER" && q.includes(s.id.toLowerCase()));
+    if (named && order) return this.sendDrone(named.x, named.z, named.label);
+    if (order && has(/shelter/)) {
+      const s = [...this.shelters].sort((a, b) => dist(a) - dist(b))[0];
+      return this.sendDrone(s.x, s.z, s.label);
+    }
+    if (order && has(/rover|base/)) return this.sendDrone(this.base.x, this.base.z, "the rover base");
+    if (order && has(/science|goal|objective|scarp|delta/)) return this.sendDrone(this.goal.x, this.goal.z, "the science stop");
+
+    if (has(/shelter/)) {
+      const s = [...this.shelters].sort((a, b) => dist(a) - dist(b))[0];
+      return this.say(`Nearest shelter: ${s.label}, ${Math.round(dist(s))} m. Sky visible there ${Math.round(s.sky * 100)}%, so it cuts little dose. Say "check the shelter" and I will fly there.`, "info");
+    }
+    if (has(/radiation|dose|sievert|gray|rad\b/)) {
+      return this.say(`Dose rate ${this.doseRate.toFixed(1)} µGy/h, ${(this.doseRate / this.baseline).toFixed(2)}x the quiet baseline of ${this.baseline.toFixed(1)}. This EVA: ${this.evaDose.toFixed(1)} µGy. Source: Curiosity RAD replay, scaled by sky visible here.`, this.band() === "red" ? "alert" : "info");
+    }
+    if (has(/storm|solar|sun|sep\b|flare/)) {
+      return this.say(this.phase === "storm" || this.phase === "sheltered" ? `Storm in progress. ${this.stormSource}. Rate is ${(this.doseRate / this.baseline).toFixed(2)}x baseline.` : "No storm alert. Dose rate is at the quiet baseline. I am watching the DONKI feed.", "info");
+    }
+    if (has(/hazard|boulder|rock|sand|danger|change|obstacle|new/)) {
+      const found = this.hazards.filter((h) => h.found);
+      return this.say(found.length ? `${found.length} changes since the base map: ${found.map((h) => `${h.label.toLowerCase()} ${Math.round(dist(h))} m`).join(", ")}. The route already avoids them.` : "Nothing flagged yet.", "info");
+    }
+    if (has(/route|how far|distance|eta|long|far/)) {
+      const left = Math.max(0, pathLength(this.route) - progressAlong(this.route, here));
+      return this.say(`${Math.round(left)} m left on the route to ${this.phase === "storm" ? "shelter" : "the science stop"}. About ${Math.ceil(left / WALK)} s walking, ${Math.ceil(left / SPRINT)} s at a run.`, "info");
+    }
+    if (has(/oxygen|o2|battery|vital|heart|suit|health|pulse/)) {
+      return this.say(`Oxygen ${Math.round(this.o2)}%, battery ${Math.round(this.battery)}%, heart rate ${Math.round(this.hr)} bpm. These are simulated.`, "info");
+    }
+    if (has(/where are you|your position|where.*superjar/)) {
+      const p = { x: this.drone.position.x, z: this.drone.position.z };
+      const { lon, lat } = this.lonLat(p);
+      return this.say(`I am ${Math.round(dist(p))} m from you at ${lat.toFixed(4)}°N ${lon.toFixed(4)}°E.`, "info");
+    }
+    if (has(/status|report|sitrep|summary|how are we|ok\?/)) {
+      return this.say(`${this.advice()} Dose rate ${(this.doseRate / this.baseline).toFixed(2)}x baseline, EVA dose ${this.evaDose.toFixed(1)} µGy, oxygen ${Math.round(this.o2)}%.`, "info");
+    }
+    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point.', "info");
+  }
+
+  // --- map ------------------------------------------------------------------
+
+  setMapExpanded(on: boolean): void {
+    this.mapExpanded = on;
+    if (on && document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /** Converts a click on the expanded (north-up) map into a SuperJar order. */
+  mapClick(fx: number, fy: number): void {
+    if (!this.mapExpanded) return;
+    const range = MAP_RANGE_WIDE;
+    this.sendDrone(this.pos.x + (fx - 0.5) * range * 2, this.pos.z + (fy - 0.5) * range * 2);
   }
 
   private updateRadiation(dt: number): void {
@@ -1032,13 +1220,16 @@ export class MarsEngine {
       elevation: this.world.elevation(this.pos.x, this.pos.z),
       lon: b.west + ((this.pos.x + HALF) / SITE_M) * (b.east - b.west),
       lat: b.north - ((this.pos.z + HALF) / SITE_M) * (b.north - b.south),
-      log: this.log.slice(-4),
+      log: this.log.slice(-6),
       hazardsFound: found,
       hazardsTotal: this.hazards.length,
       uncertainty: (found / Math.max(1, this.initialRouteLen)) * 100,
       advice: this.advice(),
       autopilot: this.autopilot,
       sound: this.soundOn,
+      droneMode: this.droneMode,
+      droneDist: Math.hypot(this.drone.position.x - this.pos.x, this.drone.position.z - this.pos.z),
+      mapExpanded: this.mapExpanded,
       locked: this.locked,
       stormSource: this.stormSource,
       routeLeft: left,
@@ -1124,22 +1315,36 @@ export class MarsEngine {
     const cv = this.minimap;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
-    const s = cv.width, range = 260; // metres from centre to edge
+    const wide = this.mapExpanded;
+    const s = cv.width, range = wide ? MAP_RANGE_WIDE : 260; // metres from centre to edge
     const k = s / (range * 2);
     ctx.save();
     ctx.clearRect(0, 0, s, s);
-    ctx.beginPath();
-    ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
-    ctx.clip();
+    if (!wide) {
+      ctx.beginPath();
+      ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+      ctx.clip();
+    }
     ctx.translate(s / 2, s / 2);
-    ctx.rotate(-this.yaw);
+    if (!wide) ctx.rotate(-this.yaw); // small map is heading-up, expanded map is north-up
     const pxPerM = this.ortho.width / SITE_M;
     const sx = (this.pos.x + HALF - range * 1.5) * pxPerM, sz = (this.pos.z + HALF - range * 1.5) * pxPerM;
+    ctx.fillStyle = "#1a130e";
+    ctx.fillRect(-s, -s, s * 2, s * 2);
     ctx.filter = "sepia(1) saturate(2.2) hue-rotate(-18deg) brightness(0.9)";
     ctx.drawImage(this.ortho, sx, sz, range * 3 * pxPerM, range * 3 * pxPerM, -range * 1.5 * k, -range * 1.5 * k, range * 3 * k, range * 3 * k);
     ctx.filter = "none";
     const P = (x: number, z: number): [number, number] => [(x - this.pos.x) * k, (z - this.pos.z) * k];
     const storm = this.phase === "storm" || this.phase === "sheltered";
+    const label = (text: string, x: number, y: number, color: string) => {
+      if (!wide) return;
+      ctx.font = "700 11px 'Courier New', monospace";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#000c";
+      ctx.strokeText(text, x + 9, y + 4);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x + 9, y + 4);
+    };
     ctx.lineWidth = 3;
     ctx.strokeStyle = storm ? "#ff5a3c" : "#35e0c2";
     ctx.beginPath();
@@ -1148,27 +1353,66 @@ export class MarsEngine {
     for (const hz of this.hazards) {
       if (!hz.found) continue;
       const [x, y] = P(hz.x, hz.z);
+      ctx.lineWidth = 2;
       ctx.strokeStyle = "#ff5a3c";
       ctx.fillStyle = "#ff5a3c44";
       ctx.beginPath();
       ctx.arc(x, y, Math.max(4, hz.r * k), 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+      label(hz.label, x, y, "#ff8b73");
     }
-    const dot = (x: number, z: number, color: string, r = 5) => { const [a, b] = P(x, z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill(); };
-    for (const sh of this.shelters) dot(sh.x, sh.z, sh === this.shelter ? "#ff5a3c" : "#f5d76e", sh === this.shelter ? 7 : 4);
-    dot(this.goal.x, this.goal.z, "#35e0c2", 6);
-    dot(this.drone.position.x, this.drone.position.z, "#ffffff", 3.5);
+    const dot = (x: number, z: number, color: string, r = 5) => { const [a, b] = P(x, z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill(); return [a, b] as const; };
+    for (const sh of this.shelters) {
+      const [a, b] = dot(sh.x, sh.z, sh === this.shelter ? "#ff5a3c" : "#f5d76e", sh === this.shelter ? 7 : 4);
+      label(sh.id === "ROVER" ? "ROVER BASE" : `${sh.id} · sky ${Math.round(sh.sky * 100)}%`, a, b, "#f5d76e");
+    }
+    const [ga, gb] = dot(this.goal.x, this.goal.z, "#35e0c2", 6);
+    label("SCIENCE STOP", ga, gb, "#35e0c2");
+    if (this.droneMode === "goto" || this.droneMode === "hold") {
+      const [tx, ty] = P(this.droneTarget.x, this.droneTarget.z);
+      const [qx, qy] = P(this.drone.position.x, this.drone.position.z);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(qx, qy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(tx - 8, ty); ctx.lineTo(tx + 8, ty); ctx.moveTo(tx, ty - 8); ctx.lineTo(tx, ty + 8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(tx, ty, SENSOR_RANGE * k, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const [da, db] = dot(this.drone.position.x, this.drone.position.z, "#ffffff", wide ? 5 : 3.5);
+    label("SUPERJAR", da, db, "#ffffff");
     ctx.restore();
-    // player arrow, always pointing up (heading-up map)
+
+    // player arrow: points up on the small map, along the heading on the north-up map
+    ctx.save();
+    ctx.translate(s / 2, s / 2);
+    if (wide) ctx.rotate(this.yaw);
     ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "#000a";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(s / 2, s / 2 - 9);
-    ctx.lineTo(s / 2 + 6, s / 2 + 7);
-    ctx.lineTo(s / 2, s / 2 + 3);
-    ctx.lineTo(s / 2 - 6, s / 2 + 7);
+    ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(0, 3); ctx.lineTo(-6, 7);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    if (wide) {
+      const bar = 200 * k; // 200 m scale bar
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(16, s - 22, bar, 3);
+      ctx.font = "700 11px 'Courier New', monospace";
+      ctx.fillText("200 m", 16, s - 28);
+      ctx.fillText("N ↑", s - 44, 22);
+    }
   }
 
   /** Runs the simulation forward without rendering. Used by automated checks. */

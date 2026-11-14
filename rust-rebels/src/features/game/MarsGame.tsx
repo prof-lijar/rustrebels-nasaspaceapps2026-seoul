@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { MarsEngine, type HudState, type ViewMode } from "./engine";
+import { MarsEngine, type DroneMode, type HudState, type ViewMode } from "./engine";
 import "./game.css";
 
 const VIEWS: { id: ViewMode; key: string; label: string }[] = [
   { id: "fpv", key: "1", label: "First person" },
   { id: "tpv", key: "2", label: "Third person" },
   { id: "map", key: "3", label: "Mission map" },
+];
+
+const DRONE_STATUS: Record<DroneMode, string> = { route: "ESCORT", recall: "WITH YOU", goto: "EN ROUTE", hold: "ON STATION" };
+const QUICK: { label: string; say: string }[] = [
+  { label: "Come back", say: "come back" },
+  { label: "Scout ahead", say: "scout ahead" },
+  { label: "Check shelter", say: "check the nearest shelter" },
+  { label: "Status", say: "status" },
 ];
 
 const CARDINALS: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
@@ -74,6 +82,8 @@ export function MarsGame() {
   const [ready, setReady] = useState(false);
   const [started, setStarted] = useState(false);
   const [info, setInfo] = useState(false);
+  const [draft, setDraft] = useState("");
+  const chat = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!stage.current || !markers.current || !minimap.current) return;
@@ -83,6 +93,25 @@ export function MarsGame() {
     eng.init().then(() => setReady(true)).catch((e: unknown) => setError(e instanceof Error ? e.message : "The scene failed to load."));
     return () => { eng.dispose(); engine.current = null; };
   }, []);
+
+  // Enter or C opens the chat box; the engine ignores keys while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!started || e.target instanceof HTMLInputElement) return;
+      if (e.code === "Enter" || e.code === "KeyC") {
+        e.preventDefault();
+        if (document.pointerLockElement) document.exitPointerLock();
+        chat.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [started]);
+
+  const send = (text: string) => {
+    engine.current?.command(text);
+    setDraft("");
+  };
 
   const begin = (auto: boolean) => {
     setStarted(true);
@@ -119,15 +148,48 @@ export function MarsGame() {
         )}
 
         <section className="mg-panel mg-left">
-          <header><b>SUPERJAR</b><span>{hud?.phase === "scout" ? "SCOUTING" : "ESCORT"} · {hud?.hazardsFound}/{hud?.hazardsTotal} changes<i className="mg-sim">SIM</i></span></header>
+          <header><b>SUPERJAR</b><span>{hud?.phase === "scout" ? "SCOUTING" : DRONE_STATUS[hud?.droneMode ?? "route"]} · {Math.round(hud?.droneDist ?? 0)} m · {hud?.hazardsFound}/{hud?.hazardsTotal} changes<i className="mg-sim">SIM</i></span></header>
           <p className="mg-advice">{hud?.advice}</p>
           <ul className="mg-log">
-            {hud?.log.map((l) => <li key={`${l.t}-${l.text}`} className={`mg-log-${l.tone}`}>{l.text}</li>)}
+            {hud?.log.map((l) => <li key={`${l.t}-${l.text}`} className={l.who ? "mg-log-you" : `mg-log-${l.tone}`}>{l.who && <b>YOU › </b>}{l.text}</li>)}
           </ul>
+          <div className="mg-quick" role="group" aria-label="Quick orders for SuperJar">
+            {QUICK.map((q) => <button key={q.label} type="button" onClick={() => send(q.say)}>{q.label}</button>)}
+          </div>
+          <form className="mg-chat" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
+            <input
+              ref={chat}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
+              placeholder="Talk to SuperJar (Enter)"
+              aria-label="Message to SuperJar"
+              maxLength={120}
+              autoComplete="off"
+            />
+            <button type="submit" disabled={!draft.trim()}>Send</button>
+          </form>
         </section>
 
-        <section className="mg-panel mg-map">
-          <canvas ref={minimap} width={220} height={220} />
+        <section className={`mg-panel mg-map ${hud?.mapExpanded ? "mg-map-wide" : ""}`}>
+          {hud?.mapExpanded && (
+            <header><b>SEND SUPERJAR</b><span>Click a point · north up<button type="button" className="mg-map-close" onClick={() => engine.current?.setMapExpanded(false)}>Close <kbd>G</kbd></button></span></header>
+          )}
+          <canvas
+            ref={minimap}
+            width={hud?.mapExpanded ? 620 : 220}
+            height={hud?.mapExpanded ? 620 : 220}
+            role="button"
+            tabIndex={0}
+            aria-label={hud?.mapExpanded ? "Map. Click a point to send SuperJar there." : "Minimap. Click to expand."}
+            onClick={(e) => {
+              if (!hud?.mapExpanded) return engine.current?.setMapExpanded(true);
+              const r = e.currentTarget.getBoundingClientRect();
+              engine.current?.mapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") engine.current?.setMapExpanded(!hud?.mapExpanded); }}
+          />
+          {!hud?.mapExpanded && <p className="mg-map-hint">Click or <kbd>G</kbd> to expand</p>}
           <dl>
             <div><dt>LAT</dt><dd>{hud?.lat.toFixed(4)}°N</dd></div>
             <div><dt>LON</dt><dd>{hud?.lon.toFixed(4)}°E</dd></div>
@@ -205,7 +267,7 @@ export function MarsGame() {
           )}
           <ul className="mg-keys">
             <li><kbd>W A S D</kbd> move</li><li><kbd>Mouse</kbd> look</li><li><kbd>Shift</kbd> run</li><li><kbd>Space</kbd> jump</li>
-            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li><li><kbd>N</kbd> sound on / off</li>
+            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li><li><kbd>N</kbd> sound on / off</li><li><kbd>Enter</kbd> talk to SuperJar</li><li><kbd>G</kbd> map: send SuperJar</li><li><kbd>B</kbd> call SuperJar back</li>
           </ul>
           <Link href="/" className="mg-back">← Back to the pitch</Link>
         </div>
@@ -221,9 +283,9 @@ export function MarsGame() {
               <dt>Derived by us</dt>
               <dd>Slope, route, sky fraction and shelter spots, all computed from the HiRISE elevation. Dose rate shown is RAD × sky fraction. That is a geometric estimate, not a dose calculation.</dd>
               <dt>Simulated</dt>
-              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
+              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections and its flight speed on orders; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
+              <dd>SuperJar&apos;s chat is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>

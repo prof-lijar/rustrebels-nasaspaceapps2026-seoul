@@ -66,6 +66,9 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | P | Auto-walk the route |
 | T | Trigger the solar storm now |
 | N | Sound on / off |
+| Enter or C | Talk to SuperJar ("come back", "check the shelter", "status", ...) |
+| G, or click the minimap | Expand the map; click a point to send SuperJar there |
+| B | Call SuperJar back |
 | R | Restart the mission |
 
 The "Data" button in the game lists what is real NASA data, what we derived, and what is simulated.
