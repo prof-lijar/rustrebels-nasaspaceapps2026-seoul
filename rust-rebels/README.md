@@ -28,6 +28,7 @@ Open http://localhost:3000 for the pitch and http://localhost:3000/app for the g
 - `src/app/page.tsx`: homepage content and sections
 - `src/app/app/page.tsx`: the Marswalk game at `/app`
 - `src/features/game/`: game engine (`engine.ts`, three.js), terrain lookups and route solver (`world.ts`), HUD (`MarsGame.tsx`, `game.css`)
+- `public/draco/`: Draco decoder copied from three.js, needed to load the compressed suit model
 - `public/dataset/`: NASA terrain, radiation and model files the game loads; see `dataset/README.md`
 - `src/app/layout.tsx`: root layout and site metadata
 - `src/app/globals.css`: Tailwind import and visual styles
@@ -64,6 +65,10 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | V, or 1 / 2 / 3 | First person, third person, mission map |
 | P | Auto-walk the route |
 | T | Trigger the solar storm now |
+| N | Sound on / off |
+| Enter or C | Talk to SuperJar ("come back", "check the shelter", "status", ...) |
+| G, or click the minimap | Expand the map; click a point to send SuperJar there |
+| B | Call SuperJar back |
 | R | Restart the mission |
 
 The "Data" button in the game lists what is real NASA data, what we derived, and what is simulated.
