@@ -7,5 +7,6 @@
 .claude/
 **/Trash Can/
 
-# Event materials not owned by the team
-*.pdf
+# Event-day deck from the Space Apps Seoul organisers, not team material
+/*.pdf
+/docs/2026- D-Day.pdf

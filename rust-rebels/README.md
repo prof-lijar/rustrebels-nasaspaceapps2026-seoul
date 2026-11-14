@@ -28,7 +28,11 @@ Open http://localhost:3000. No environment variables are required.
 - `src/app/page.tsx`: homepage content and sections
 - `src/app/layout.tsx`: root layout and site metadata
 - `src/app/globals.css`: Tailwind import and visual styles
+- `src/components/slide-deck.tsx`: pitch deck viewer (popup, arrow keys, Enter for full-screen presentation)
+- `src/lib/deck.ts`: slide list and PDF link for the deck viewer
 - `public/images/`: local website assets
+- `public/slides/`, `public/deck/`: rendered deck slides and the source PDF
+- `scripts/render-slides.sh`: re-renders `../docs/RustRebels_MartianMap.pdf` into `public/slides/` (needs `brew install poppler`)
 - `next.config.ts`: Next.js configuration
 - `.env.example`: environment variable guidance
 
