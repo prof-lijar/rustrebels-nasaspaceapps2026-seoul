@@ -32,7 +32,9 @@ web_video "$RAW/media/perseverance_explores_jezero_delta.mp4" "$OUT/video/jezero
 
 # 3D models: NASA's own glTF binaries. Rover and helicopter are unchanged.
 cp "$RAW/models/25042_Perseverance.glb" "$OUT/models/perseverance.glb"
-cp "$RAW/models/25043_Ingenuity_v3.glb" "$OUT/models/ingenuity.glb"
+# NASA's newer export of the same helicopter (Draco-compressed, WebP textures), supplied by hand:
+# place "Ingenuity Mars Helicopter.glb" in dataset/raw/models/ first.
+cp "$RAW/models/Ingenuity Mars Helicopter.glb" "$OUT/models/ingenuity.glb"
 # The other suits in the game's wardrobe, all unchanged.
 cp "$RAW/models/astronaut_quaternius.glb" "$OUT/models/astronaut.glb"
 cp "$RAW/models/astronaut_classic_jtoastie.glb" "$OUT/models/astronaut_classic.glb"

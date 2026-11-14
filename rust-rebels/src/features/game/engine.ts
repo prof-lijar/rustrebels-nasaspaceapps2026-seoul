@@ -164,6 +164,8 @@ export class MarsEngine {
   private keys = new Set<string>();
   private speed = 0;
   private walkPhase = 0;
+  /** Smoothed first-person eye height; null until the first first-person frame. */
+  private eyeY: number | null = null;
   private astronaut = new THREE.Group();
   // Astronaut: one of several open suit models, chosen by the player (see suits.ts).
   private suit?: LoadedSuit;
@@ -1845,12 +1847,21 @@ export class MarsEngine {
     const head = new THREE.Vector3(focus.x, focus.y + eye, focus.z);
     const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     if (this.view === "fpv") {
-      const bob = remote ? 0 : Math.sin(this.walkPhase * 2) * 0.035 * Math.min(1, this.speed / WALK);
-      cam.position.copy(head).setY(head.y + bob);
+      let y = head.y;
+      if (!remote) {
+        // A walker's eyes stay level: the head rides over each step and the gaze is held steady.
+        // So the eye height eases after the ground instead of copying every dip in the terrain,
+        // and only a trace of the step rhythm is left in.
+        const jumped = this.eyeY === null || Math.abs(head.y - this.eyeY) > 2;
+        this.eyeY = jumped ? head.y : this.eyeY! + (head.y - this.eyeY!) * (1 - Math.exp(-dt * (this.grounded ? 6 : 14)));
+        y = this.eyeY + Math.sin(this.walkPhase * 2) * 0.008 * Math.min(1, this.speed / WALK);
+      } else this.eyeY = null;
+      cam.position.copy(head).setY(y);
       cam.lookAt(head.clone().add(dir));
       if (this.control === "superjar") cam.rotateZ(this.droneBank * 0.6); // the horizon tilts as the pilot banks
       cam.fov = this.control === "superjar" ? 82 : 74;
     } else if (this.view === "tpv") {
+      this.eyeY = null;
       const back = dir.clone().multiplyScalar(-chase);
       const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(yaw) * 0.75, remote ? 1.4 : 0.75, Math.sin(yaw) * 0.75));
       want.y = Math.max(want.y, this.world.heightAt(want.x, want.z) + 0.6);
