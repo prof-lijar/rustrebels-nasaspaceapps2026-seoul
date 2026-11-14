@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { MarsGame } from "@/features/game/MarsGame";
+import { PlayGate } from "@/features/game/PlayGate";
 
 export const metadata: Metadata = {
   title: "Marswalk | Rust Rebels",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function AppPage() {
-  return <MarsGame />;
+  return <PlayGate />;
 }

@@ -1,0 +1,33 @@
+/* Small-screen stand-in for Marswalk: the team film and a note to come back on a desktop. Scoped under .pg. */
+.pg-blank { position: fixed; inset: 0; background: #1a130e; }
+
+.pg { --pg-accent: #f38d5a; --pg-teal: #35e0c2; --pg-ink: #f4ede2; min-height: 100dvh; display: flex; flex-direction: column; gap: 18px; padding: 18px 16px 40px; color: var(--pg-ink); background: radial-gradient(120% 60% at 80% 0%, #6b2f1a 0%, #2a1710 45%, #120d0a 100%); overflow-x: hidden; }
+.pg h1 { margin: 0; font-size: clamp(34px, 10.5vw, 56px); line-height: .98; letter-spacing: -.045em; font-weight: 900; }
+.pg h1 span { color: var(--pg-accent); }
+
+.pg-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pg-mark { font-size: 13px; font-weight: 800; letter-spacing: .06em; color: inherit; text-decoration: none; }
+.pg-mark span { margin: 0 8px; color: var(--pg-accent); }
+.pg-tag { padding: 4px 9px; border: 1px solid #f4ede244; font: 11px/1.4 "Courier New", ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; color: #e0d6c9; }
+
+.pg-video { position: relative; width: 100%; max-width: 720px; margin: 0 auto; aspect-ratio: 16 / 9; background: #000; border: 1px solid color-mix(in srgb, var(--pg-teal) 55%, transparent); box-shadow: 0 18px 50px #000a, 0 0 0 6px #35e0c212; }
+.pg-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.pg-video-note { margin: -8px auto 0; width: 100%; max-width: 720px; font: 11px/1.4 "Courier New", ui-monospace, monospace; letter-spacing: .08em; color: #b9ad9e; }
+
+.pg-card { width: 100%; max-width: 720px; margin: 6px auto 0; padding: 22px 18px 20px; display: grid; gap: 16px; background: #0e1413b8; border: 1px solid #f4ede226; border-top: 3px solid var(--pg-accent); backdrop-filter: blur(4px); }
+.pg-eyebrow { display: flex; align-items: center; gap: 9px; margin: 0; font: 700 11px/1.4 "Courier New", ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--pg-teal); }
+.pg-eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--pg-teal); box-shadow: 0 0 0 0 #35e0c299; animation: pg-pulse 1.8s ease-out infinite; }
+.pg-copy { margin: 0; font-size: 16px; line-height: 1.6; color: #e3d7c9; }
+
+.pg-needs { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid #f4ede226; }
+.pg-needs li { display: flex; align-items: baseline; gap: 14px; padding: 10px 0; border-bottom: 1px solid #f4ede226; font-size: 14px; }
+.pg-needs b { font: 700 11px/1 "Courier New", ui-monospace, monospace; color: var(--pg-accent); }
+
+.pg-actions { display: grid; gap: 10px; }
+.pg-primary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 52px; padding: 14px 18px; font: 700 15px Arial, Helvetica, sans-serif; color: #1b1712; background: var(--pg-accent); border: 0; cursor: pointer; text-align: left; }
+.pg-primary:active { background: #ffac7f; }
+.pg-secondary { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 18px; font-size: 14px; color: var(--pg-ink); text-decoration: none; border: 1px solid #f4ede255; }
+.pg-primary:focus-visible, .pg-secondary:focus-visible, .pg-mark:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+@keyframes pg-pulse { 0% { box-shadow: 0 0 0 0 #35e0c299; } 100% { box-shadow: 0 0 0 9px #35e0c200; } }
+@media (prefers-reduced-motion: reduce) { .pg-eyebrow i { animation: none; } }
