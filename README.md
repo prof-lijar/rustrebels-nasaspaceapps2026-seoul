@@ -7,7 +7,8 @@ Challenge: [Interplanetary Survival Guide: Martian Map](https://www.spaceappscha
 | Folder | What's there |
 | --- | --- |
 | [`rust-rebels/`](rust-rebels/) | Team website (Next.js 16, TypeScript, Tailwind CSS 4). See its README to run it. |
-| [`docs/`](docs/) | Team identity, challenge research, and image assets. |
+| [`docs/`](docs/) | Team identity, challenge research, image assets, the app [PRD](docs/PRD-martian-map-app.md) and [implementation plan](docs/implementation-plan.md). |
+| [`rust-rebels/dataset/`](rust-rebels/dataset/) | NASA data scripts and notes. Browser-ready files are in `rust-rebels/public/dataset/`. |
 
 ```sh
 cd rust-rebels
