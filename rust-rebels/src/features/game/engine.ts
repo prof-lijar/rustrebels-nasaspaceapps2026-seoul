@@ -22,11 +22,17 @@ const STORM_REPLAY = 600; // RAD seconds per real second during the storm
 const STORM_AT_PROGRESS = 0.3;
 const SCOUT_SPEED = 80;
 const SENSOR_RANGE = 70;
+const ROVER_SPEED = 4.5; // m/s. The real rover's top speed is about 0.04 m/s; this is game pace.
+const ROVER_RESCUE_SPEED = 7.5;
+const ROVER_FOLLOW_GAP = 11; // metres the rover keeps behind the astronaut
+const DOCK_RANGE = 6.5;
+const ROVER_MODEL_YAW = Math.PI; // the NASA model's front (arm, mast) faces +Z; turn it to face the drive direction
 const DRONE_SPEED = 30; // m/s on orders
 const MAP_RANGE_WIDE = 650; // metres from centre to edge of the expanded map
 
 export type ViewMode = "fpv" | "tpv" | "map";
 export type Band = "green" | "amber" | "red";
+export type RoverMode = "follow" | "hold" | "goto" | "rescue";
 export type DroneMode = "route" | "recall" | "goto" | "hold";
 export type Phase = "scout" | "walk" | "storm" | "sheltered" | "arrived";
 
@@ -58,6 +64,11 @@ export type HudState = {
   lat: number;
   log: { t: number; text: string; tone: "info" | "warn" | "alert"; who?: "you" }[];
   droneMode: DroneMode;
+  roverMode: RoverMode;
+  roverDist: number;
+  roverMoving: boolean;
+  canDock: boolean;
+  docked: boolean;
   droneDist: number;
   mapExpanded: boolean;
   hazardsFound: number;
@@ -149,6 +160,21 @@ export class MarsEngine {
   private droneTarget: Vec2 = { x: 0, z: 0 };
   private droneArrived = false;
   private mapExpanded = false;
+
+  // rover: support vehicle and mobile shelter
+  private rover = new THREE.Group();
+  private roverPos: Vec2 = { x: 0, z: 0 };
+  private roverYaw = 0.8;
+  private roverMode: RoverMode = "follow";
+  private roverGoal: Vec2 = { x: 0, z: 0 };
+  private roverPath: Vec2[] = [];
+  private roverPathAt = -10;
+  private roverPathFor: Vec2 = { x: 1e9, z: 1e9 };
+  private roverMoving = false;
+  private roverArrived = true;
+  private docked = false;
+  private roverSound?: HTMLAudioElement;
+  private stormRouteAt = 0;
   private rad: RadPoint[] = [];
   private baseline = 11.15;
   private onsetIdx = 0;
@@ -166,6 +192,7 @@ export class MarsEngine {
   private stormSource = "";
   private markers: Marker[] = [];
   private beacon!: THREE.Mesh;
+  private sky?: THREE.Mesh;
   private hudAcc = 0;
   private initialRouteLen = 1;
 
@@ -283,8 +310,10 @@ export class MarsEngine {
           float s = max(dot(normalize(d), sun),0.0); c += vec3(0.75,0.82,1.0)*pow(s,900.0)*2.0 + vec3(0.35,0.42,0.55)*pow(s,14.0)*0.35;
           gl_FragColor = vec4(c,1.0); }`,
     });
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(8000, 32, 16), mat);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(7000, 32, 16), mat);
     dome.renderOrder = -1;
+    dome.frustumCulled = false;
+    this.sky = dome;
     this.scene.add(dome);
     this.cleanup.push(() => { dome.geometry.dispose(); mat.dispose(); });
   }
@@ -451,11 +480,12 @@ export class MarsEngine {
     }
     if (rover.status === "fulfilled") {
       const r = fit(rover.value.scene, 3.4);
-      const rx = BASE.x + 9, rz = -BASE.y - 6;
-      r.position.set(rx, this.world.heightAt(rx, rz), rz);
-      r.rotation.y = 0.8;
-      this.scene.add(r);
+      r.rotation.y = ROVER_MODEL_YAW;
+      this.rover.add(r);
+    } else {
+      this.rover.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 3), new THREE.MeshStandardMaterial({ color: 0xd8d2c6 })));
     }
+    this.scene.add(this.rover);
     if (heli.status === "fulfilled") {
       heli.value.scene.traverse((o) => { if (/rotor/i.test(o.name)) this.rotors.push(o); });
       this.drone.add(fit(heli.value.scene, 2.6)); // drawn about twice life size so it reads at distance
@@ -548,6 +578,13 @@ export class MarsEngine {
     this.droneDist = 0;
     this.droneMode = "route";
     this.droneArrived = false;
+    this.roverPos = { x: this.base.x + 9, z: this.base.z - 6 };
+    this.roverYaw = 0.8;
+    this.roverMode = "follow";
+    this.roverPath = [];
+    this.roverPathAt = -10;
+    this.roverArrived = true;
+    this.docked = false;
     this.pos.set(this.base.x, this.world.heightAt(this.base.x, this.base.z), this.base.z);
     this.drone.position.set(this.base.x, this.pos.y + 3, this.base.z); // SuperJar launches from the rover base
     this.vy = 0;
@@ -563,6 +600,7 @@ export class MarsEngine {
 
     this.addMarker(() => new THREE.Vector3(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z) + 4, this.goal.z), "SCIENCE STOP", "mg-mk-goal", () => this.phase !== "storm" && this.phase !== "sheltered");
     this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map");
+    this.addMarker(() => new THREE.Vector3(this.roverPos.x, this.world.heightAt(this.roverPos.x, this.roverPos.z) + 3.4, this.roverPos.z), "ROVER", "mg-mk-rover", () => this.view !== "map" && Math.hypot(this.roverPos.x - this.pos.x, this.roverPos.z - this.pos.z) > 9);
     this.addMarker(() => new THREE.Vector3(this.droneTarget.x, this.world.heightAt(this.droneTarget.x, this.droneTarget.z) + 3, this.droneTarget.z), "SUPERJAR TARGET", "mg-mk-drone", () => this.droneMode === "goto" || this.droneMode === "hold");
 
     this.say("SuperJar launching. Scouting the route before you step out.", "info");
@@ -694,17 +732,25 @@ export class MarsEngine {
     this.phase = "storm";
     this.stormT = 0;
     this.stormStartReal = this.realT;
-    // Nearest shelter by straight-line distance: rover first when it is close.
+    // Rover first: it is the shelter, and it drives to meet the astronaut. Terrain only if the rover is far.
     const here = { x: this.pos.x, z: this.pos.z };
     const d = (s: Shelter) => Math.hypot(s.x - here.x, s.z - here.z);
-    this.shelter = [...this.shelters].sort((a, b) => d(a) - d(b))[0];
+    this.syncRoverShelter();
+    const roverShelter = this.shelters[0];
+    const terrain = this.shelters.slice(1).sort((a, b) => d(a) - d(b))[0];
+    this.shelter = d(roverShelter) < 450 || !terrain ? roverShelter : terrain;
     const sh = this.shelter;
-    this.beacon.position.set(sh.x, this.world.heightAt(sh.x, sh.z), sh.z);
     (this.beacon.material as THREE.MeshBasicMaterial).color.set(0xff5a3c);
-    this.addMarker(() => new THREE.Vector3(sh.x, this.world.heightAt(sh.x, sh.z) + 4, sh.z), "SHELTER", "mg-mk-shelter");
+    this.addMarker(() => new THREE.Vector3(sh.x, this.world.heightAt(sh.x, sh.z) + 4.6, sh.z), "SHELTER", "mg-mk-shelter");
     this.playAlarm();
     this.say("SOLAR PARTICLE EVENT. Proton rate rising.", "alert");
-    this.say(`${sh.label}, ${Math.round(d(sh))} m. Sky visible there: ${Math.round(sh.sky * 100)}%.`, "alert");
+    if (sh.id === "ROVER") {
+      this.roverMode = "rescue";
+      this.docked = false;
+      this.say(`Rover is driving to you as your shelter, ${Math.round(d(sh))} m away. Run to meet it.`, "alert");
+    } else {
+      this.say(`${sh.label}, ${Math.round(d(sh))} m. Sky visible there: ${Math.round(sh.sky * 100)}%.`, "alert");
+    }
     this.resolveRoute();
   }
 
@@ -728,6 +774,8 @@ export class MarsEngine {
       if (k === "KeyN") this.setSound(!this.soundOn);
       if (k === "KeyG") this.setMapExpanded(!this.mapExpanded);
       if (k === "KeyB") this.recallDrone();
+      if (k === "KeyE") this.interact();
+      if (k === "KeyF") this.orderRover(this.roverMode === "follow" ? "hold" : "follow");
       if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot) this.setAutopilot(false);
       if (k === "Space" || k.startsWith("Arrow")) e.preventDefault();
     };
@@ -775,6 +823,7 @@ export class MarsEngine {
     };
     this.wind = make("mars_wind_supercam_sol4.mp3", true, 0.6);
     this.droneHum = make("ingenuity_flight_loop.mp3", true, 0);
+    this.roverSound = make("rover_driving_sol16.mp3", true, 0);
     this.laser = make("supercam_laser_sol12.mp3", false, 0.9);
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (Ctx) this.audioCtx = new Ctx();
@@ -782,7 +831,7 @@ export class MarsEngine {
   }
 
   private applySound(): void {
-    for (const a of [this.wind, this.droneHum]) {
+    for (const a of [this.wind, this.droneHum, this.roverSound]) {
       if (!a) continue;
       if (this.soundOn) void a.play().catch(() => {});
       else a.pause();
@@ -826,6 +875,11 @@ export class MarsEngine {
       const d = this.drone.position.distanceTo(this.camera.position);
       this.droneHum.volume = Math.max(0, Math.min(0.5, 0.5 * (1 - (d - 8) / 110)));
     }
+    if (this.roverSound) {
+      const d = Math.hypot(this.roverPos.x - this.camera.position.x, this.roverPos.z - this.camera.position.z);
+      const want = this.roverMoving ? Math.max(0, Math.min(0.55, 0.55 * (1 - (d - 4) / 70))) : 0;
+      this.roverSound.volume += (want - this.roverSound.volume) * 0.08;
+    }
     if (this.laser && this.laserStop && this.realT > this.laserStop) {
       this.laser.pause();
       this.laserStop = 0;
@@ -849,6 +903,7 @@ export class MarsEngine {
   private step(dt: number): void {
     this.realT += dt;
     this.movePlayer(dt);
+    this.moveRover(dt);
     this.moveDrone(dt);
     this.updateRadiation(dt);
     this.updateBody(dt);
@@ -867,10 +922,22 @@ export class MarsEngine {
         this.say("Science stop reached. Sampling window open.", "info");
       }
     }
-    if (this.phase === "storm" && this.shelter && Math.hypot(this.shelter.x - here.x, this.shelter.z - here.z) < 9) {
-      this.phase = "sheltered";
-      this.setAutopilot(false);
-      this.say(`In shelter after ${Math.round(this.realT - this.stormStartReal)} s. Hold until dose rate is under 1.2x baseline.`, "info");
+    if (this.phase === "storm" && this.shelter) {
+      // The rover moves, so keep the red route and beacon pointed at where it is now.
+      if (this.shelter.id === "ROVER" && this.realT - this.stormRouteAt > 1.2) {
+        this.stormRouteAt = this.realT;
+        this.resolveRoute();
+      }
+      this.beacon.position.set(this.shelter.x, this.world.heightAt(this.shelter.x, this.shelter.z), this.shelter.z);
+      if (Math.hypot(this.shelter.x - here.x, this.shelter.z - here.z) < (this.shelter.id === "ROVER" ? DOCK_RANGE : 9)) {
+        this.phase = "sheltered";
+        this.setAutopilot(false);
+        if (this.shelter.id === "ROVER") {
+          this.roverMode = "hold";
+          this.docked = true;
+        }
+        this.say(`${this.shelter.id === "ROVER" ? "At the rover" : "In shelter"} after ${Math.round(this.realT - this.stormStartReal)} s. Hold until dose rate is under 1.2x baseline.`, "info");
+      }
     }
     void done;
 
@@ -925,6 +992,8 @@ export class MarsEngine {
         const d = Math.hypot(nx - h.x, nz - h.z);
         if (d < rr) { nx = h.x + ((nx - h.x) / (d || 1)) * rr; nz = h.z + ((nz - h.z) / (d || 1)) * rr; }
       }
+      const rd = Math.hypot(nx - this.roverPos.x, nz - this.roverPos.z);
+      if (rd < 2.3) { nx = this.roverPos.x + ((nx - this.roverPos.x) / (rd || 1)) * 2.3; nz = this.roverPos.z + ((nz - this.roverPos.z) / (rd || 1)) * 2.3; }
       if (this.world.inBounds(nx, nz)) {
         moved = Math.hypot(nx - this.pos.x, nz - this.pos.z);
         this.pos.x = nx;
@@ -1070,7 +1139,19 @@ export class MarsEngine {
       const b = this.meta.bounds_lonlat;
       const lat = parseFloat(coords[1]), lon = parseFloat(coords[2]);
       const x = ((lon - b.west) / (b.east - b.west)) * SITE_M - HALF, z = ((b.north - lat) / (b.north - b.south)) * SITE_M - HALF;
-      return this.sendDrone(x, z, `${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`);
+      const name = `${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`;
+      return has(/\brover\b/) ? this.sendRover(x, z, name) : this.sendDrone(x, z, name);
+    }
+    if (has(/\brover\b/)) {
+      if (has(/\b(stop|hold|stay|park|wait)\b/)) return this.orderRover("hold");
+      if (has(/\b(come|here|to me|pick me|bring|fetch)\b/)) return this.orderRover("come");
+      if (has(/\b(follow|with me|tag along|escort)\b/)) return this.orderRover("follow");
+      const place = this.shelters.find((s) => s.id !== "ROVER" && q.includes(s.id.toLowerCase()));
+      if (place) return this.sendRover(place.x, place.z, place.label);
+      if (has(/science|goal|objective|scarp|delta/)) return this.sendRover(this.goal.x, this.goal.z, "the science stop");
+      if (has(/base|home/)) return this.sendRover(this.base.x + 9, this.base.z - 6, "the base");
+      const state = { follow: "following you", hold: "parked", goto: "driving to a marked point", rescue: "driving to you as shelter" }[this.roverMode];
+      return this.say(`Rover is ${Math.round(this.roverDist())} m from you, ${state}. Say "rover come here", "rover follow", "rover stop", or press E beside it to plug in.`, "info");
     }
     if (has(/\b(come back|comeback|return|recall|to me|come here|back to me|call back)\b/)) return this.recallDrone();
     if (has(/\b(escort|follow|resume|lead|scout ahead|go ahead|carry on)\b/)) return this.escortDrone();
@@ -1119,7 +1200,7 @@ export class MarsEngine {
     if (has(/status|report|sitrep|summary|how are we|ok\?/)) {
       return this.say(`${this.advice()} Dose rate ${(this.doseRate / this.baseline).toFixed(2)}x baseline, EVA dose ${this.evaDose.toFixed(1)} µGy, oxygen ${Math.round(this.o2)}%.`, "info");
     }
-    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point.', "info");
+    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". For the rover: "rover come here", "rover follow", "rover stop". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point.', "info");
   }
 
   // --- map ------------------------------------------------------------------
@@ -1130,10 +1211,12 @@ export class MarsEngine {
   }
 
   /** Converts a click on the expanded (north-up) map into a SuperJar order. */
-  mapClick(fx: number, fy: number): void {
+  mapClick(fx: number, fy: number, who: "superjar" | "rover" = "superjar"): void {
     if (!this.mapExpanded) return;
     const range = MAP_RANGE_WIDE;
-    this.sendDrone(this.pos.x + (fx - 0.5) * range * 2, this.pos.z + (fy - 0.5) * range * 2);
+    const x = this.pos.x + (fx - 0.5) * range * 2, z = this.pos.z + (fy - 0.5) * range * 2;
+    if (who === "rover") this.sendRover(x, z);
+    else this.sendDrone(x, z);
   }
 
   private updateRadiation(dt: number): void {
@@ -1171,6 +1254,135 @@ export class MarsEngine {
     const hours = (dt * CLOCK_RATE) / 3600;
     this.o2 = Math.max(0, this.o2 - hours * (100 / 8) * (0.8 + effort * 0.7));
     this.battery = Math.max(0, this.battery - hours * (100 / 10));
+    if (this.docked) {
+      if (this.roverDist() > DOCK_RANGE + 1.5) {
+        this.docked = false;
+        this.say("Unplugged from the rover.", "info");
+      } else {
+        this.o2 = Math.min(100, this.o2 + dt * 5);
+        this.battery = Math.min(100, this.battery + dt * 5);
+      }
+    }
+  }
+
+  // --- rover ----------------------------------------------------------------
+
+  private roverDist(): number {
+    return Math.hypot(this.roverPos.x - this.pos.x, this.roverPos.z - this.pos.z);
+  }
+
+  private syncRoverShelter(): void {
+    const s = this.shelters[0];
+    s.x = this.roverPos.x;
+    s.z = this.roverPos.z;
+    s.sky = this.world.skyAt(s.x, s.z);
+    s.label = "Rover";
+  }
+
+  private moveRover(dt: number): void {
+    const here = { x: this.pos.x, z: this.pos.z };
+    const dPlayer = this.roverDist();
+    let goal: Vec2 | null = null, stopAt = 1.5;
+    if (this.roverMode === "follow" || this.roverMode === "rescue") {
+      stopAt = this.roverMode === "rescue" ? 4.2 : ROVER_FOLLOW_GAP;
+      // Start rolling only once the astronaut has opened a gap, so it does not creep at their heels.
+      if (dPlayer > stopAt + (this.roverMoving ? 0 : 5)) goal = here;
+    } else if (this.roverMode === "goto") {
+      goal = this.roverGoal;
+    }
+    let moved = 0;
+    if (goal && Math.hypot(goal.x - this.roverPos.x, goal.z - this.roverPos.z) > stopAt) {
+      const drift = Math.hypot(goal.x - this.roverPathFor.x, goal.z - this.roverPathFor.z);
+      if (!this.roverPath.length || (drift > 10 && this.realT - this.roverPathAt > 1.5)) {
+        this.roverPath = solveRoute(this.world, this.roverPos, goal, this.blockers()) ?? [];
+        this.roverPathAt = this.realT;
+        this.roverPathFor = { ...goal };
+        if (!this.roverPath.length && this.roverMode === "goto") {
+          this.roverMode = "hold";
+          this.say("Rover: no drivable route to that point under 25°. Holding.", "warn");
+        }
+      }
+      if (this.roverPath.length) {
+        const along = progressAlong(this.roverPath, this.roverPos);
+        const aim = pointAlong(this.roverPath, along + 3.5);
+        const dx = aim.x - this.roverPos.x, dz = aim.z - this.roverPos.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.05) {
+          const want = Math.atan2(dx, -dz);
+          let turn = want - this.roverYaw;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          this.roverYaw += turn * Math.min(1, dt * 2.5);
+          // Slow down while turning hard, like a six-wheeled rover would.
+          // Falling well behind in follow mode, it speeds up to catch the astronaut.
+          const base = this.roverMode === "rescue" || (this.roverMode === "follow" && dPlayer > 28) ? ROVER_RESCUE_SPEED : ROVER_SPEED;
+          const v = base * Math.max(0.25, 1 - Math.abs(turn) / 1.6);
+          moved = Math.min(d, v * dt);
+          this.roverPos.x += Math.sin(this.roverYaw) * moved;
+          this.roverPos.z -= Math.cos(this.roverYaw) * moved;
+        }
+        this.roverArrived = false;
+      }
+    } else if (this.roverMode === "goto" && !this.roverArrived) {
+      this.roverArrived = true;
+      this.roverMode = "hold";
+      this.roverPath = [];
+      this.say(`Rover parked. ${Math.round(dPlayer)} m from you.`, "info");
+    } else {
+      this.roverPath = [];
+    }
+    this.roverMoving = moved > 1e-4;
+    this.syncRoverShelter();
+
+    // Sit the rover on the ground and tilt it to the slope under its wheels.
+    const { x, z } = this.roverPos;
+    const y = this.world.heightAt(x, z);
+    const sin = Math.sin(this.roverYaw), cos = Math.cos(this.roverYaw);
+    const pitch = Math.atan2(this.world.heightAt(x + sin * 1.3, z - cos * 1.3) - this.world.heightAt(x - sin * 1.3, z + cos * 1.3), 2.6);
+    const roll = Math.atan2(this.world.heightAt(x + cos * 1.2, z + sin * 1.2) - this.world.heightAt(x - cos * 1.2, z - sin * 1.2), 2.4);
+    this.rover.position.set(x, y, z);
+    this.rover.rotation.set(pitch, -this.roverYaw, -roll, "YXZ");
+  }
+
+  /** E key: plug into the rover for oxygen and battery, or unplug. */
+  interact(): void {
+    if (this.docked) {
+      this.docked = false;
+      return this.say("Unplugged from the rover.", "info");
+    }
+    if (this.roverDist() > DOCK_RANGE) return this.say(`The rover is ${Math.round(this.roverDist())} m away. Get within ${Math.round(DOCK_RANGE)} m to plug in, or say "rover come here".`, "info");
+    this.docked = true;
+    if (this.roverMode !== "rescue") this.roverMode = "hold";
+    this.say("Plugged into the rover. Recharging oxygen and battery.", "info");
+  }
+
+  orderRover(mode: "follow" | "hold" | "come"): void {
+    this.docked = false;
+    if (mode === "hold") {
+      this.roverMode = "hold";
+      return this.say("Rover holding here.", "info");
+    }
+    if (mode === "come") {
+      this.roverGoal = { x: this.pos.x + Math.sin(this.yaw) * 4, z: this.pos.z - Math.cos(this.yaw) * 4 };
+      this.roverMode = "goto";
+      this.roverArrived = false;
+      this.roverPath = [];
+      return this.say(`Rover driving to you, ${Math.round(this.roverDist())} m. About ${Math.ceil(this.roverDist() / ROVER_SPEED)} s.`, "info");
+    }
+    this.roverMode = "follow";
+    this.say(`Rover following, ${ROVER_FOLLOW_GAP} m behind you.`, "info");
+  }
+
+  sendRover(x: number, z: number, label?: string): void {
+    if (!this.world.inBounds(x, z, 20)) return this.say("That point is outside the mapped site.", "warn");
+    if (this.world.slopeAt(x, z) > MAX_SLOPE_DEG) return this.say(`Rover: that point is on a ${this.world.slopeAt(x, z).toFixed(0)}° slope, too steep to park on.`, "warn");
+    this.docked = false;
+    this.roverGoal = { x, z };
+    this.roverMode = "goto";
+    this.roverArrived = false;
+    this.roverPath = [];
+    const d = Math.hypot(x - this.roverPos.x, z - this.roverPos.z);
+    this.say(`Rover driving to ${label ?? "the marked point"}, ${Math.round(d)} m in a straight line.`, "info");
   }
 
   private band(): Band {
@@ -1228,6 +1440,11 @@ export class MarsEngine {
       autopilot: this.autopilot,
       sound: this.soundOn,
       droneMode: this.droneMode,
+      roverMode: this.roverMode,
+      roverDist: this.roverDist(),
+      roverMoving: this.roverMoving,
+      canDock: this.roverDist() <= DOCK_RANGE,
+      docked: this.docked,
       droneDist: Math.hypot(this.drone.position.x - this.pos.x, this.drone.position.z - this.pos.z),
       mapExpanded: this.mapExpanded,
       locked: this.locked,
@@ -1291,6 +1508,8 @@ export class MarsEngine {
     if (this.routeMesh) (this.routeMesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(this.realT * 4) * 0.25;
     (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.realT * 3) * 0.07;
 
+    // Keep the sky centred on the camera; a fixed dome falls outside the far plane near the site edges.
+    this.sky?.position.copy(cam.position);
     this.renderer.render(this.scene, cam);
     this.placeMarkers();
     this.updateAudio();
@@ -1364,8 +1583,9 @@ export class MarsEngine {
     }
     const dot = (x: number, z: number, color: string, r = 5) => { const [a, b] = P(x, z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill(); return [a, b] as const; };
     for (const sh of this.shelters) {
+      if (sh.id === "ROVER") continue; // drawn below as the rover itself
       const [a, b] = dot(sh.x, sh.z, sh === this.shelter ? "#ff5a3c" : "#f5d76e", sh === this.shelter ? 7 : 4);
-      label(sh.id === "ROVER" ? "ROVER BASE" : `${sh.id} · sky ${Math.round(sh.sky * 100)}%`, a, b, "#f5d76e");
+      label(`${sh.id} · sky ${Math.round(sh.sky * 100)}%`, a, b, "#f5d76e");
     }
     const [ga, gb] = dot(this.goal.x, this.goal.z, "#35e0c2", 6);
     label("SCIENCE STOP", ga, gb, "#35e0c2");
@@ -1386,6 +1606,28 @@ export class MarsEngine {
       ctx.beginPath();
       ctx.arc(tx, ty, SENSOR_RANGE * k, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    {
+      const [rx, ry] = P(this.roverPos.x, this.roverPos.z);
+      ctx.fillStyle = "#f38d5a";
+      ctx.strokeStyle = "#000a";
+      ctx.lineWidth = 1;
+      ctx.fillRect(rx - 5, ry - 5, 10, 10);
+      ctx.strokeRect(rx - 5, ry - 5, 10, 10);
+      label("ROVER", rx, ry, "#f38d5a");
+      if (this.roverMode === "goto") {
+        const [gx, gy] = P(this.roverGoal.x, this.roverGoal.z);
+        ctx.strokeStyle = "#f38d5a";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        if (this.roverPath.length) this.roverPath.forEach((p) => { const [a, b] = P(p.x, p.z); ctx.lineTo(a, b); });
+        else ctx.lineTo(gx, gy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeRect(gx - 6, gy - 6, 12, 12);
+      }
     }
     const [da, db] = dot(this.drone.position.x, this.drone.position.z, "#ffffff", wide ? 5 : 3.5);
     label("SUPERJAR", da, db, "#ffffff");
@@ -1426,7 +1668,7 @@ export class MarsEngine {
     cancelAnimationFrame(this.raf);
     if (document.pointerLockElement) document.exitPointerLock();
     this.cleanup.forEach((f) => f());
-    for (const a of [this.wind, this.droneHum, this.laser]) a?.pause();
+    for (const a of [this.wind, this.droneHum, this.roverSound, this.laser]) a?.pause();
     void this.audioCtx?.close();
     for (const mk of this.markers) mk.el.remove();
     this.renderer?.dispose();

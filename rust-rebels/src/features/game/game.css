@@ -21,6 +21,7 @@
 .mg-mk-goal { color: #35e0c2; }
 .mg-mk-drone { color: #fff; border-style: dashed; }
 .mg-mk-hazard { color: #ff5a3c; }
+.mg-mk-rover { color: #f38d5a; }
 .mg-mk-shelter { color: #ff5a3c; background: #ff5a3c; color: #1a0a06; }
 
 /* panels */
@@ -64,6 +65,15 @@
 .mg-map-close { padding: 3px 8px; background: transparent; border: 1px solid #f4ede266; font-size: 10px; }
 .mg-map-close:hover { border-color: var(--mg-ink); }
 .mg-log-you { color: var(--mg-ink) !important; border-color: var(--mg-ink) !important; }
+.mg-rover { margin-top: 10px; padding-top: 8px; border-top: 1px solid #f4ede222; display: grid; gap: 6px; font-size: 10px; color: #c8c0b3; }
+.mg-rover b { color: #f38d5a; margin-right: 4px; }
+.mg-rover div { display: flex; flex-wrap: wrap; gap: 5px; }
+.mg-rover button, .mg-map-who button { padding: 4px 8px; background: #0008; border: 1px solid #f4ede244; font-size: 10px; }
+.mg-rover button:hover, .mg-map-who button:hover { border-color: var(--mg-ink); }
+.mg-rover .mg-on, .mg-map-who .mg-on { border-color: #f38d5a; color: #f38d5a; }
+.mg-rover button:focus-visible, .mg-map-who button:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
+.mg-map-who { display: flex; align-items: center; gap: 6px; }
+.mg-prompt { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); margin: 0; padding: 8px 14px; background: #0e1413e6; border: 1px solid #f38d5a; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .mg-quick { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
 .mg-quick button { padding: 4px 8px; background: #0008; border: 1px solid #f4ede244; font-size: 10px; }
 .mg-quick button:hover, .mg-chat button:hover:not(:disabled) { border-color: var(--mg-ink); }
