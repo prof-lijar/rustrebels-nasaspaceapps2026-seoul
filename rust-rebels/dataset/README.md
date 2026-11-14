@@ -32,7 +32,12 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | `space-weather/donki_2017-09.json` | 10 SEP, 24 CME, 3 geomagnetic storm records and CME arrival predictions for Mars, 1–20 Sep 2017 | NASA DONKI |
 | `weather/meda_sol_0120.json` | Pressure, air temperature, wind, humidity, ground emission in 5-minute bins for one sol | Perseverance MEDA, PDS |
 | `images/index.json`, `images/navcam/*.jpg` | 13 Navcam frames at 4 mapped waypoints | Mars 2020 raw images |
-| `audio/sounds_of_mars.mp3`, `audio/ingenuity_flight.mp3` | Perseverance microphone recordings | NASA/JPL-Caltech |
+| `audio/mars_wind_supercam_sol4.mp3` | Martian wind, SuperCam microphone, sol 4 (40 s). The game's ambient loop | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
+| `audio/supercam_laser_sol12.mp3` | SuperCam laser striking a rock, sol 12 (11 s). Played when SuperJar flags a hazard | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
+| `audio/ingenuity_flight_loop.mp3`, `audio/ingenuity_flight.mp3` | Ingenuity's fourth flight heard by SuperCam; the loop drops the silent start and end. The scout drone's sound | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
+| `audio/mars_first_audio_sol1.mp3` | First audio recorded on the surface, sol 1 (20 s). Not used in the game yet | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
+| `audio/rover_driving_sol16.mp3` | Perseverance driving, sol 16 highlights (85 s). Not used in the game yet | NASA/JPL-Caltech |
+| `audio/sounds_of_mars.mp3` | Sound track of NASA's "Sounds of Mars" compilation video (149 s), uncut. Not used in the game | NASA/JPL-Caltech |
 | `video/jezero_delta_overview.mp4`, `video/ingenuity_third_flight.mp4` | 720p clips with poster frames | NASA/JPL-Caltech |
 | `models/perseverance.glb`, `models/ingenuity.glb` | NASA 3D models, unchanged | NASA/JPL-Caltech |
 
@@ -47,6 +52,7 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | MEDA | https://atmos.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda/ | NASA/JPL-Caltech/CAB (CSIC-INTA) |
 | Raw images | https://mars.nasa.gov/mars2020/multimedia/raw-images/ | NASA/JPL-Caltech |
 | Sounds of Mars | https://science.nasa.gov/mission/mars-2020-perseverance/sounds-of-mars/ | NASA/JPL-Caltech |
+| Perseverance microphone clips | https://science.nasa.gov/resource/perseverance-rovers-supercam-records-wind-on-mars/ and the sibling resource pages named in `fetch_raw.py` | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
 | Videos | https://images.nasa.gov/ | NASA/JPL-Caltech |
 | 3D models | https://mars.nasa.gov/system/resources/gltf_files/ | NASA/JPL-Caltech |
 
@@ -66,7 +72,7 @@ NASA media is generally free to use with credit and without implying NASA endors
 - **Terrain gives little shelter here.** The most shielded standable spots still see 88–93% of the sky, and nowhere in the site sees less than 64%. `skyview` and `shelters` are our own geometric derivation, not a dose calculation.
 - **Weather is one sol, with no dust opacity.** Sol 120 was chosen because the wind sensor was still healthy.
 - **Navcam coverage is thin.** Four stops, all on the crater floor (sols 15, 73, 123, 341), none on the delta front.
-- **Audio is not cut.** Both MP3s are full sound tracks. Nobody has listened through and picked loop points.
+- **Audio is louder than the originals.** The recordings are very quiet, so the clips were levelled (the laser clip was raised 13 dB). Nobody has listened to the loops by ear; they were checked by duration and level only.
 - **DONKI flares and shocks are missing.** The FLR endpoint returned 404 and the IPS request hit the demo-key rate limit.
 - **Not prepared:** CRISM minerals, RIMFAX radar and MOLA, which the pitch deck lists. CTX covers the regional elevation role MOLA had.
 

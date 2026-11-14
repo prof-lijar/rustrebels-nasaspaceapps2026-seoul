@@ -86,9 +86,25 @@ MEDIA = {
 }
 
 
+_AUDIO = "https://assets.science.nasa.gov/content/dam/science/psd/mars/downloadable_items/4/5/"
+AUDIO = {  # Perseverance microphone recordings, each from its own science.nasa.gov/resource/ page
+    # SuperCam microphone, sol 4: Martian wind. /resource/perseverance-rovers-supercam-records-wind-on-mars/
+    "mars_wind_supercam_sol4.mp3": _AUDIO + "45828_SCAM_MIC_SOL004_RUN001.mp3",
+    # SuperCam microphone, sol 1: first audio from the surface. /resource/first-audio-recording-of-sounds-on-mars/
+    "mars_first_audio_sol1.mp3": _AUDIO + "45825_SCAM_MIC_SOL001_RUN001.mp3",
+    # SuperCam laser hitting a rock, sol 12. /resource/first-acoustic-recording-of-laser-shots-on-mars/
+    "supercam_laser_sol12.mp3": _AUDIO + "45831_SCAM_MIC_SOL012_RUN001.mp3",
+    # EDL microphone, rover driving on sol 16, 90 s of highlights.
+    # /resource/sounds-of-perseverance-mars-rover-driving-sol-16-90-second-highlights/
+    "rover_driving_sol16.mp3": _AUDIO + "45857_FILTERED_HIGHLIGHTS_-_Sol16RoverDriveHighlights.mp3",
+}
+
+
 def media() -> None:
     for name, url in MEDIA.items():
         get(url, RAW / "media" / name)
+    for name, url in AUDIO.items():
+        get(url, RAW / "audio" / name)
 
 
 RAD_DIR = "https://pds-ppi.igpp.ucla.edu/data/MSL-M-RAD-3-RDR-V1.0/"

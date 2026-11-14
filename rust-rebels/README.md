@@ -64,6 +64,7 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | V, or 1 / 2 / 3 | First person, third person, mission map |
 | P | Auto-walk the route |
 | T | Trigger the solar storm now |
+| N | Sound on / off |
 | R | Restart the mission |
 
 The "Data" button in the game lists what is real NASA data, what we derived, and what is simulated.

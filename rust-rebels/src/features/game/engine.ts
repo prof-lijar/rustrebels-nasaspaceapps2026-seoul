@@ -58,6 +58,7 @@ export type HudState = {
   uncertainty: number;
   advice: string;
   autopilot: boolean;
+  sound: boolean;
   locked: boolean;
   stormSource: string;
   routeLeft: number;
@@ -154,6 +155,14 @@ export class MarsEngine {
   private beacon!: THREE.Mesh;
   private hudAcc = 0;
   private initialRouteLen = 1;
+
+  // sound: NASA Perseverance microphone recordings, plus one synthesised alarm tone
+  private wind?: HTMLAudioElement;
+  private droneHum?: HTMLAudioElement;
+  private laser?: HTMLAudioElement;
+  private laserStop = 0;
+  private audioCtx?: AudioContext;
+  private soundOn = true;
 
   constructor(
     private container: HTMLElement,
@@ -590,6 +599,7 @@ export class MarsEngine {
     ring.position.y = 0.5;
     h.mesh.add(ring);
     this.addMarker(() => new THREE.Vector3(h.x, y + (h.kind === "sand" ? 2.5 : 7), h.z), h.label, "mg-mk-hazard");
+    this.playLaser();
     this.say(`${h.label} at ${Math.round(progressAlong(this.route, h))} m. Not in the base map. Rerouting.`, "warn");
     this.resolveRoute();
   }
@@ -607,6 +617,7 @@ export class MarsEngine {
     this.beacon.position.set(sh.x, this.world.heightAt(sh.x, sh.z), sh.z);
     (this.beacon.material as THREE.MeshBasicMaterial).color.set(0xff5a3c);
     this.addMarker(() => new THREE.Vector3(sh.x, this.world.heightAt(sh.x, sh.z) + 4, sh.z), "SHELTER", "mg-mk-shelter");
+    this.playAlarm();
     this.say("SOLAR PARTICLE EVENT. Proton rate rising.", "alert");
     this.say(`${sh.label}, ${Math.round(d(sh))} m. Sky visible there: ${Math.round(sh.sky * 100)}%.`, "alert");
     this.resolveRoute();
@@ -628,6 +639,7 @@ export class MarsEngine {
       if (k === "KeyP") this.setAutopilot(!this.autopilot);
       if (k === "KeyT") this.triggerStorm();
       if (k === "KeyR") this.resetMission();
+      if (k === "KeyN") this.setSound(!this.soundOn);
       if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot) this.setAutopilot(false);
       if (k === "Space" || k.startsWith("Arrow")) e.preventDefault();
     };
@@ -661,6 +673,75 @@ export class MarsEngine {
     if (!el || this.locked) return;
     // Pointer lock can be refused (no user gesture, embedded view); the game still runs on autopilot.
     try { void (el.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {}); } catch { /* ignored */ }
+  }
+
+  /** Must be called from a click or key press: browsers block audio until the user acts. */
+  startAudio(): void {
+    if (this.wind) return;
+    const make = (file: string, loop: boolean, volume: number) => {
+      const a = new Audio(`${DATA}/audio/${file}`);
+      a.loop = loop;
+      a.volume = volume;
+      a.preload = "auto";
+      return a;
+    };
+    this.wind = make("mars_wind_supercam_sol4.mp3", true, 0.6);
+    this.droneHum = make("ingenuity_flight_loop.mp3", true, 0);
+    this.laser = make("supercam_laser_sol12.mp3", false, 0.9);
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (Ctx) this.audioCtx = new Ctx();
+    this.applySound();
+  }
+
+  private applySound(): void {
+    for (const a of [this.wind, this.droneHum]) {
+      if (!a) continue;
+      if (this.soundOn) void a.play().catch(() => {});
+      else a.pause();
+    }
+    if (!this.soundOn) this.laser?.pause();
+  }
+
+  setSound(on: boolean): void {
+    this.soundOn = on;
+    this.applySound();
+  }
+
+  private playLaser(): void {
+    if (!this.laser || !this.soundOn) return;
+    this.laser.currentTime = 0.2;
+    void this.laser.play().catch(() => {});
+    this.laserStop = this.realT + 2.3; // about seven laser shots
+  }
+
+  /** Storm alarm. Synthesised, not a NASA recording. */
+  private playAlarm(): void {
+    const ctx = this.audioCtx;
+    if (!ctx || !this.soundOn) return;
+    void ctx.resume();
+    for (let i = 0; i < 4; i++) {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      const at = ctx.currentTime + i * 0.42;
+      osc.type = "square";
+      osc.frequency.setValueAtTime(i % 2 ? 660 : 880, at);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.12, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.32);
+    }
+  }
+
+  private updateAudio(): void {
+    if (this.droneHum) {
+      const d = this.drone.position.distanceTo(this.camera.position);
+      this.droneHum.volume = Math.max(0, Math.min(0.5, 0.5 * (1 - (d - 8) / 110)));
+    }
+    if (this.laser && this.laserStop && this.realT > this.laserStop) {
+      this.laser.pause();
+      this.laserStop = 0;
+    }
   }
 
   setView(v: ViewMode): void { this.view = v; }
@@ -886,6 +967,7 @@ export class MarsEngine {
       uncertainty: (found / Math.max(1, this.initialRouteLen)) * 100,
       advice: this.advice(),
       autopilot: this.autopilot,
+      sound: this.soundOn,
       locked: this.locked,
       stormSource: this.stormSource,
       routeLeft: left,
@@ -930,6 +1012,7 @@ export class MarsEngine {
 
     this.renderer.render(this.scene, cam);
     this.placeMarkers();
+    this.updateAudio();
   }
 
   private placeMarkers(): void {
@@ -1009,6 +1092,8 @@ export class MarsEngine {
     cancelAnimationFrame(this.raf);
     if (document.pointerLockElement) document.exitPointerLock();
     this.cleanup.forEach((f) => f());
+    for (const a of [this.wind, this.droneHum, this.laser]) a?.pause();
+    void this.audioCtx?.close();
     for (const mk of this.markers) mk.el.remove();
     this.renderer?.dispose();
     this.renderer?.domElement.remove();

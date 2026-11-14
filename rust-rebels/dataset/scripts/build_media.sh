@@ -11,6 +11,15 @@ FF="ffmpeg -hide_banner -loglevel error -y"
 $FF -i "$RAW/media/sounds_of_mars_no_voiceover.mp4" -vn -ac 2 -ar 44100 -b:a 128k "$OUT/audio/sounds_of_mars.mp3"
 $FF -i "$RAW/media/ingenuity_flight_audio.mp4" -vn -ac 2 -ar 44100 -b:a 128k "$OUT/audio/ingenuity_flight.mp3"
 
+# Perseverance microphone clips, levelled so they sit together in the game.
+# The recordings are quiet (the laser clip averages -54 dB), so loudness is raised; nothing else is changed.
+for clip in mars_wind_supercam_sol4 mars_first_audio_sol1 rover_driving_sol16; do
+  $FF -i "$RAW/audio/$clip.mp3" -af "loudnorm=I=-20:TP=-2:LRA=11" -ac 2 -ar 44100 -b:a 128k "$OUT/audio/$clip.mp3"
+done
+$FF -i "$RAW/audio/supercam_laser_sol12.mp3" -af "volume=13dB" -ac 2 -ar 44100 -b:a 128k "$OUT/audio/supercam_laser_sol12.mp3"
+# The helicopter track is silent for its first 5 s and last 12 s; keep the flight itself for looping.
+$FF -ss 8 -t 140 -i "$OUT/audio/ingenuity_flight.mp3" -af "afade=t=in:d=1.5,afade=t=out:st=138:d=2" -b:a 128k "$OUT/audio/ingenuity_flight_loop.mp3"
+
 # Video: 720p H.264, small enough to stream from the site, with a poster frame each.
 web_video() { # input output crf [extra ffmpeg args]
   in="$1"; out="$2"; crf="$3"; shift 3

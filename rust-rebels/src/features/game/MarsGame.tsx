@@ -86,6 +86,7 @@ export function MarsGame() {
 
   const begin = (auto: boolean) => {
     setStarted(true);
+    engine.current?.startAudio();
     engine.current?.setAutopilot(auto);
     if (!auto) engine.current?.requestLock();
   };
@@ -169,6 +170,7 @@ export function MarsGame() {
             ))}
             <button type="button" className={hud?.autopilot ? "mg-on" : ""} onClick={() => engine.current?.setAutopilot(!hud?.autopilot)}><kbd>P</kbd>Auto-walk</button>
             <button type="button" onClick={() => engine.current?.triggerStorm()}><kbd>T</kbd>Storm</button>
+            <button type="button" className={hud?.sound ? "mg-on" : ""} aria-pressed={hud?.sound ?? true} onClick={() => engine.current?.setSound(!hud?.sound)}><kbd>N</kbd>Sound {hud?.sound ? "on" : "off"}</button>
             <button type="button" onClick={() => engine.current?.resetMission()}><kbd>R</kbd>Restart</button>
             <button type="button" onClick={() => setInfo(true)}>Data</button>
           </div>
@@ -203,7 +205,7 @@ export function MarsGame() {
           )}
           <ul className="mg-keys">
             <li><kbd>W A S D</kbd> move</li><li><kbd>Mouse</kbd> look</li><li><kbd>Shift</kbd> run</li><li><kbd>Space</kbd> jump</li>
-            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li>
+            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li><li><kbd>N</kbd> sound on / off</li>
           </ul>
           <Link href="/" className="mg-back">← Back to the pitch</Link>
         </div>
@@ -215,13 +217,13 @@ export function MarsGame() {
             <b>What is real, what is simulated</b>
             <dl>
               <dt>Real NASA data</dt>
-              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech.</dd>
+              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, and the SuperCam laser (sol 12), played when SuperJar flags a hazard (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
               <dt>Derived by us</dt>
               <dd>Slope, route, sky fraction and shelter spots, all computed from the HiRISE elevation. Dose rate shown is RAD × sky fraction. That is a geometric estimate, not a dose calculation.</dd>
               <dt>Simulated</dt>
-              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections; vitals, oxygen and battery; walking speed; small scattered stones and ground grain. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
+              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size.</dd>
+              <dd>RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>
