@@ -12,12 +12,13 @@ const VIEWS: { id: ViewMode; key: string; label: string }[] = [
   { id: "map", key: "3", label: "Mission map" },
 ];
 
-const DRONE_STATUS: Record<DroneMode, string> = { route: "ESCORT", recall: "WITH YOU", goto: "EN ROUTE", hold: "ON STATION", manual: "REMOTE" };
+const DRONE_STATUS: Record<DroneMode, string> = { route: "ESCORT", recall: "RETURNING", follow: "FOLLOWING", goto: "EN ROUTE", hold: "ON STATION", manual: "REMOTE" };
 const ROVER_STATUS: Record<RoverMode, string> = { follow: "FOLLOWING", hold: "PARKED", goto: "DRIVING", rescue: "COMING TO YOU", manual: "REMOTE" };
 // Each crew member has its own orders. The chat box and the map send to whichever tab is open.
 const QUICK: Record<Crew, { label: string; say: string }[]> = {
   superjar: [
     { label: "Come back", say: "come back" },
+    { label: "Follow me", say: "follow me" },
     { label: "Scout ahead", say: "scout ahead" },
     { label: "Check shelter", say: "check the nearest shelter" },
     { label: "Status", say: "status" },
