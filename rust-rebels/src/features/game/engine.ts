@@ -39,7 +39,7 @@ const MAP_RANGE_WIDE = 650; // metres from centre to edge of the expanded map
 
 export type ViewMode = "fpv" | "tpv" | "map";
 export type Band = "green" | "amber" | "red";
-/** Small ground relief, about 1.4 m across and up to 4.5 cm high or deep. Simulated. */
+/** Small ground relief, about 1.4 m across and up to 5 cm high. Simulated. */
 function bump(x: number, z: number): number {
   const s = 1.4, xi = Math.floor(x / s), zi = Math.floor(z / s);
   const hash = (i: number, j: number) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
@@ -48,7 +48,7 @@ function bump(x: number, z: number): number {
   fz = fz * fz * (3 - 2 * fz);
   const top = hash(xi, zi) + (hash(xi + 1, zi) - hash(xi, zi)) * fx;
   const bot = hash(xi, zi + 1) + (hash(xi + 1, zi + 1) - hash(xi, zi + 1)) * fx;
-  return (top + (bot - top) * fz - 0.5) * 0.09;
+  return (top + (bot - top) * fz) * 0.05; // never below the mapped surface, so a wheel is never drawn inside the ground
 }
 
 export type Crew = "superjar" | "rover";
@@ -1563,17 +1563,18 @@ export class MarsEngine {
       // Each side settles on its own three wheels. The body takes the average of the two sides,
       // which is what the differential on a rocker-bogie rover does.
       let sum = 0;
-      const mean = [0, 0];
+      const mean = [0, 0], across = [0, 0]; // each side's average ground height and wheel offset from the centre line
       for (let s = 0; s < 2; s++) {
         const ws = this.wheels.filter((w) => (w.x > 0 ? 1 : 0) === s).sort((a, b) => a.z - b.z);
         const h = ws.map((w) => ground(w.x, w.z));
         sidePitch[s] = Math.atan2(h[0] - h[2], ws[2].z - ws[0].z);
         mean[s] = (h[0] + h[1] + h[2]) / 3;
+        across[s] = (ws[0].x + ws[1].x + ws[2].x) / 3;
         sum += mean[s];
       }
       const zMid = this.rockers[0].z;
       pitch = (sidePitch[0] + sidePitch[1]) / 2;
-      roll = Math.atan2(mean[1] - mean[0], Math.abs(this.rockers[1].group.position.x - this.rockers[0].group.position.x));
+      roll = Math.atan2(mean[1] - mean[0], across[1] - across[0]); // over the wheels' own track width
       y = sum / 2 + Math.tan(pitch) * zMid;
     } else {
       y = this.world.heightAt(x, z);
@@ -1586,7 +1587,8 @@ export class MarsEngine {
     p.pitch += (pitch - p.pitch) * k;
     p.roll += (roll - p.roll) * k;
     this.rover.position.set(x, p.y, z);
-    this.rover.rotation.set(p.pitch, -this.roverYaw, -p.roll, "YXZ");
+    // Positive roll means the right side is higher; a positive turn about the rover's long axis lifts its right.
+    this.rover.rotation.set(p.pitch, -this.roverYaw, p.roll, "YXZ");
     for (const r of this.rockers) {
       const want = sidePitch[r.side > 0 ? 1 : 0] - p.pitch;
       r.group.rotation.x += (want - r.group.rotation.x) * k;
