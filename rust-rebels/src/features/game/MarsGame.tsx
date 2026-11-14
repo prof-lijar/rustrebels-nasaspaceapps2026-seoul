@@ -99,6 +99,7 @@ export function MarsGame() {
   const [crew, setCrew] = useState<Crew>("superjar");
   const [wardrobe, setWardrobe] = useState(false);
   const chat = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!stage.current || !markers.current || !minimap.current) return;
@@ -130,23 +131,38 @@ export function MarsGame() {
       if (saved && SUITS.some((s) => s.id === saved)) void engine.current?.setSuit(saved as SuitId);
     } catch { /* keep the default suit */ }
   }, []);
-  const suit = hud?.suit ?? "rebel"; // the engine reports which suit is on
+  const suit = hud?.suit ?? "explorer"; // the engine reports which suit is on
+  // The walking preview is drawn by the engine into the picker's canvas while a picker is on screen.
+  // On the start screen the astronaut itself stands large on the right instead.
+  useEffect(() => {
+    if (ready) engine.current?.setShowcase(!started);
+  }, [ready, started]);
+  const pickerShown = ready && started && wardrobe;
+  useEffect(() => {
+    const eng = engine.current;
+    eng?.setPreview(pickerShown ? previewRef.current : null);
+    return () => eng?.setPreview(null);
+  }, [pickerShown, suit]);
   const wear = (id: SuitId) => {
     void engine.current?.setSuit(id);
     try { window.localStorage.setItem("marswalk-suit", id); } catch { /* not saved */ }
   };
+  const worn = SUITS.find((x) => x.id === suit);
+  // A compact picker: one row of names per group, and a small picture of the chosen suit walking.
   const suitPicker = (
-    <div className="mg-suits" role="radiogroup" aria-label="Suit">
-      {(["Fancy", "NASA"] as const).map((kind) => (
-        <div key={kind}>
-          <span>{kind === "NASA" ? "REAL · NASA MODELS" : "FANCY"}</span>
-          {SUITS.filter((s) => s.kind === kind).map((s) => (
-            <button key={s.id} type="button" role="radio" aria-checked={suit === s.id} className={suit === s.id ? "mg-on" : ""} onClick={() => wear(s.id)}>
-              <b>{s.name}</b><i>{s.note}</i>
-            </button>
-          ))}
-        </div>
-      ))}
+    <div className="mg-suits">
+      <div className="mg-suit-list" role="radiogroup" aria-label="Suit">
+        {(["Fancy", "NASA"] as const).map((kind) => (
+          <div key={kind}>
+            <span>{kind === "NASA" ? "NASA" : "FANCY"}</span>
+            {SUITS.filter((x) => x.kind === kind).map((x) => (
+              <button key={x.id} type="button" role="radio" aria-checked={suit === x.id} className={suit === x.id ? "mg-on" : ""} title={x.note} onClick={() => wear(x.id)}>{x.name}</button>
+            ))}
+          </div>
+        ))}
+        <p>{worn?.note} · {worn?.credit}</p>
+      </div>
+      {started && <canvas key={suit} ref={previewRef} className="mg-suit-preview" width={180} height={240} aria-label={`${worn?.name} suit, walking`} />}
     </div>
   );
 
@@ -322,7 +338,6 @@ export function MarsGame() {
           <section className="mg-panel mg-wardrobe" aria-label="Choose a suit">
             <header><b>SUIT</b><span><button type="button" className="mg-map-close" onClick={() => setWardrobe(false)}>Close</button></span></header>
             {suitPicker}
-            <p className="mg-wardrobe-credit">{SUITS.find((s) => s.id === suit)?.credit}</p>
           </section>
         )}
 
@@ -342,7 +357,6 @@ export function MarsGame() {
 
       {!started && (
         <div className="mg-start">
-          <div className="mg-start-poster" aria-hidden="true" />
           <p className="mg-eyebrow">Rust Rebels · NASA Space Apps 2026 · Seoul</p>
           <div className="mg-title">MARS<span>WALK</span></div>
           <p className="mg-lede">Jezero crater, delta front. SuperJar scouts the route. You walk it. Then the Sun interrupts.</p>
@@ -357,10 +371,7 @@ export function MarsGame() {
             <p className="mg-loading">{status}…</p>
           )}
           {ready && !error && (
-            <div className="mg-start-suit">
-              <p>Suit</p>
-              {suitPicker}
-            </div>
+            <div className="mg-start-suit">{suitPicker}</div>
           )}
           <ul className="mg-keys">
             <li><kbd>W A S D</kbd> move</li><li><kbd>Mouse</kbd> look</li><li><kbd>Shift</kbd> run</li><li><kbd>Space</kbd> jump</li>
@@ -382,7 +393,7 @@ export function MarsGame() {
               <dt>Simulated</dt>
               <dd>New boulders, sand and rockfall; SuperJar&apos;s detections and its flight speed on orders; the rover driving itself, following you and recharging your suit, remote control of the rover and SuperJar, its speed (about 100 times the real rover&apos;s), and the small bumps its suspension rides over, which the 4 m terrain cannot show; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>The rover is shown as the storm shelter because the pitch says so; the game applies no dose reduction there, since we have no figure for it. The chat with SuperJar and the rover is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. Suits: the three NASA suits (Z2, Mark III, ACES) are NASA&apos;s own models from NASA 3D Resources, which have no joints. To make them walk we fit the Quaternius astronaut&apos;s skeleton inside each suit and play that artist&apos;s animations on the body and legs; the arms stay in the pose NASA modelled. The fancy suits are game art: Astronaut by Quaternius (public domain), with the artist&apos;s own animations and our colours, and Rigged Astronaut by J-Toastie (CC BY 3.0). The walk on the Classic suit is our own animation of ordinary gait. None of the walks is motion data from real astronauts. NASA&apos;s rover model is also static: we cut its wheel mesh into six wheels that spin and steer and split the suspension into two sides that rock; the smaller bogie joints do not move. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
+              <dd>The rover is shown as the storm shelter because the pitch says so; the game applies no dose reduction there, since we have no figure for it. The chat with SuperJar and the rover is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. Suits: the two NASA suits (EMU and ACES) are NASA&apos;s own models, from NASA Science 3D Resources and the NASA 3D Resources repository, which have no joints. To make them walk we fit the Quaternius astronaut&apos;s skeleton inside each suit and play that artist&apos;s animations on it. On the EMU only the body and legs move; its arms stay on the jet backpack controllers as NASA modelled them. The fancy suits are game art: Astronaut by Quaternius (public domain), with the artist&apos;s own animations and our colours, Rigged Astronaut by J-Toastie (CC BY 3.0), and the Explorer suit, a rigged astronaut model with its own walk and run animations. The walk on the Classic suit is our own animation of ordinary gait. None of the walks is motion data from real astronauts. NASA&apos;s rover model is also static: we cut its wheel mesh into six wheels that spin and steer and split the suspension into two sides that rock; the smaller bogie joints do not move. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>

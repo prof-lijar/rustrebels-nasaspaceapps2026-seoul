@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export type SuitId = "rebel" | "amar" | "stealth" | "classic" | "z2" | "mark3" | "aces";
+export type SuitId = "explorer" | "rebel" | "amar" | "stealth" | "classic" | "aces" | "emu";
 
 export interface SuitInfo {
   id: SuitId;
@@ -18,12 +18,12 @@ export interface SuitInfo {
 }
 
 export const SUITS: SuitInfo[] = [
+  { id: "explorer", name: "Explorer", kind: "Fancy", note: "Detailed textured suit with its own walk and run", credit: "Astronaut in spacesuit (rigged), supplied by the team" },
   { id: "rebel", name: "Rust Rebel", kind: "Fancy", note: "Sand and orange, gold visor", credit: "Astronaut by Quaternius (CC0), recoloured" },
   { id: "amar", name: "Field Scientist", kind: "Fancy", note: "Sand and teal", credit: "Astronaut by Quaternius (CC0), recoloured" },
   { id: "stealth", name: "Night Shift", kind: "Fancy", note: "Dark armour, original colours", credit: "Astronaut by Quaternius (CC0)" },
   { id: "classic", name: "Classic EVA", kind: "Fancy", note: "White suit, gold visor, backpack", credit: "Rigged Astronaut by J-Toastie (CC BY 3.0)" },
-  { id: "z2", name: "NASA Z2", kind: "NASA", note: "Planetary-surface prototype", credit: "NASA 3D Resources" },
-  { id: "mark3", name: "NASA Mark III", kind: "NASA", note: "Surface-suit technology demonstrator", credit: "NASA 3D Resources" },
+  { id: "emu", name: "NASA EMU", kind: "NASA", note: "The spacewalk suit used on the Space Station", credit: "NASA Science 3D Resources" },
   { id: "aces", name: "NASA ACES", kind: "NASA", note: "Orange launch-and-entry suit", credit: "NASA 3D Resources" },
 ];
 
@@ -78,34 +78,30 @@ interface StaticRig {
   /** ...and between these heights... */
   armLow: [number, number];
   armHigh: [number, number];
-  /** ...and not this far behind, which is the backpack. */
-  armNotBehind?: [number, number];
   /** Or when it reaches this far forward of the body (hands held in front), off the centre line, between two heights. */
   armAhead: [number, number];
   aheadOut: [number, number];
   aheadLow: [number, number];
   aheadHigh: [number, number];
   shoulder: [number, number, number];
+  /**
+   * Animate the arms too. Works where NASA posed the arms hanging clear of the body; where they
+   * are resting on equipment (EMU) they are left as modelled.
+   */
+  swingArms?: boolean;
 }
 
 // Measured on each model with measureSuit() below.
 const STATIC: Partial<Record<SuitId, StaticRig>> = {
-  z2: {
-    file: "z2_spacesuit.glb", yaw: Math.PI, cx: 0,
-    legBlend: [0.66, 0.82], kneeBlend: [0.35, 0.47], hip: [0.16, 0.78, 0.07], kneeDrop: 0.37,
-    armOut: [0.25, 0.31], armLow: [0.88, 0.96], armHigh: [1.46, 1.54], armNotBehind: [0.1, 0.18],
-    armAhead: [0.16, 0.24], aheadOut: [0.12, 0.18], aheadLow: [0.86, 0.92], aheadHigh: [1.32, 1.4],
-    shoulder: [0.3, 1.38, 0.05],
-  },
-  mark3: {
-    file: "mark3_spacesuit.glb", yaw: 0, cx: -0.09,
-    legBlend: [0.44, 0.56], kneeBlend: [0.24, 0.34], hip: [0.12, 0.55, 0.2], kneeDrop: 0.26,
-    armOut: [0.29, 0.34], armLow: [0.86, 0.94], armHigh: [1.36, 1.44],
-    armAhead: [0.1, 0.16], aheadOut: [0.1, 0.16], aheadLow: [0.86, 0.94], aheadHigh: [1.3, 1.38],
-    shoulder: [0.3, 1.3, 0.15],
+  emu: {
+    file: "emu_suit.glb", yaw: 0, cx: 0.03,
+    legBlend: [0.55, 0.68], kneeBlend: [0.3, 0.4], hip: [0.13, 0.72, -0.18], kneeDrop: 0.34,
+    armOut: [0.3, 0.36], armLow: [0.8, 0.9], armHigh: [1.4, 1.5],
+    armAhead: [0.36, 0.44], aheadOut: [0.08, 0.14], aheadLow: [0.8, 0.9], aheadHigh: [1.25, 1.33],
+    shoulder: [0.3, 1.36, -0.1],
   },
   aces: {
-    file: "aces_suit.glb", yaw: 0, cx: 0,
+    file: "aces_suit.glb", yaw: 0, cx: 0, swingArms: true,
     legBlend: [0.5, 0.62], kneeBlend: [0.27, 0.37], hip: [0.13, 0.62, 0.03], kneeDrop: 0.3,
     armOut: [0.24, 0.28], armLow: [0.72, 0.8], armHigh: [1.38, 1.46], // the hands hang below the hips
     armAhead: [0.12, 0.17], aheadOut: [0.1, 0.16], aheadLow: [0.72, 0.8], aheadHigh: [1.3, 1.38],
@@ -144,7 +140,7 @@ function disposeTree(root: THREE.Object3D): void {
 }
 
 /**
- * NASA's Mark III and ACES files mark every material as see-through, which three.js would draw with
+ * NASA's ACES file marks every material as see-through, which three.js would draw with
  * an extra full-scene pass and which shows the empty helmet. Draw them solid, in their own colours.
  */
 function solidMaterials(root: THREE.Object3D): void {
@@ -153,11 +149,13 @@ function solidMaterials(root: THREE.Object3D): void {
     if (!m.isMesh) return;
     for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
       const p = mat as THREE.MeshPhysicalMaterial;
+      // Fully metallic surfaces come out black with no reflection map.
+      if (!p.metalnessMap && p.metalness > 0.5) p.metalness = 0.1;
       if (!(p.transmission > 0)) continue;
       p.transmission = 0;
       p.transparent = false;
       p.opacity = 1;
-      p.metalness = Math.min(p.metalness, 0.1); // fully metallic surfaces come out black with no reflection map
+      p.metalness = Math.min(p.metalness, 0.1);
     }
   });
 }
@@ -301,6 +299,84 @@ function playClips(model: THREE.Object3D, clips: THREE.AnimationClip[], size: nu
   };
 }
 
+// --- walk and run clips only -------------------------------------------------
+
+/**
+ * A rigged model that ships with "walk" and "run" clips but no idle. The clips are measured at
+ * load time: how fast the feet travel (so playback can match ground speed) and the moment in the
+ * walk when the feet pass each other, which is held as the standing pose.
+ */
+async function loadWalkRun(id: SuitId, loader: GLTFLoader, file: string, yaw: number): Promise<LoadedSuit> {
+  const gltf: GLTF = await loader.loadAsync(`/dataset/models/${file}`);
+  const model = gltf.scene;
+  model.traverse((o) => { o.frustumCulled = false; });
+  const root = stand(model, yaw);
+  const find = (name: string) => gltf.animations.find((c) => c.name.toLowerCase() === name);
+  const walkC = find("walk"), runC = find("run");
+  if (!walkC || !runC) throw new Error(`${file} has no walk and run clips`);
+  const hips = model.getObjectByName("Hips"), footL = model.getObjectByName("LeftFoot"), footR = model.getObjectByName("RightFoot");
+  if (!hips || !footL || !footR) throw new Error(`${file} has no Hips, LeftFoot and RightFoot bones`);
+
+  // Keep the figure on the spot: the game moves it, so any forward travel baked into a clip is removed.
+  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(root.children[0].getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  for (const clip of [walkC, runC]) {
+    const track = clip.tracks.find((t) => t.name === "Hips.position");
+    if (!track) continue;
+    const v = track.values, start = new THREE.Vector3(v[0], v[1], v[2]), p = new THREE.Vector3();
+    for (let i = 0; i < v.length; i += 3) {
+      p.set(v[i], v[i + 1], v[i + 2]).sub(start);
+      p.addScaledVector(forward, -p.dot(forward)).add(start).toArray(v, i);
+    }
+  }
+
+  const mixer = new THREE.AnimationMixer(model);
+  const walk = mixer.clipAction(walkC), run = mixer.clipAction(runC);
+  // Standing: the arms and body from one frozen moment of the walk, and the legs straight as the
+  // model was built (bones a clip does not drive fall back to their built pose).
+  const upper = walkC.tracks.filter((t) => !/^(Hips|\w*UpLeg|\w*Leg|\w*Foot)\./.test(t.name));
+  const still = mixer.clipAction(new THREE.AnimationClip("stand", walkC.duration, upper));
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), h = new THREE.Vector3();
+  /** Samples one clip: the ground speed its feet imply, and when the feet are closest together. */
+  const measure = (action: THREE.AnimationAction) => {
+    const N = 32, T = action.getClip().duration;
+    let lo = Infinity, hi = -Infinity, best = 0, gap = Infinity;
+    action.play();
+    for (let i = 0; i < N; i++) {
+      action.time = (i / N) * T;
+      mixer.update(0);
+      root.updateMatrixWorld(true);
+      root.worldToLocal(footL.getWorldPosition(a));
+      root.worldToLocal(footR.getWorldPosition(b));
+      root.worldToLocal(hips.getWorldPosition(h));
+      lo = Math.min(lo, a.z - h.z);
+      hi = Math.max(hi, a.z - h.z);
+      const d = Math.abs(a.z - b.z); // feet level with each other: the arms are then at mid-swing, beside the body
+      if (d < gap) { gap = d; best = action.time; }
+    }
+    action.stop();
+    return { speed: Math.max(0.3, (2 * (hi - lo)) / T), standAt: best };
+  };
+  const walkM = measure(walk), runM = measure(run);
+  for (const action of [still, walk, run]) action.play();
+  still.time = walkM.standAt;
+  still.setEffectiveTimeScale(0);
+
+  return {
+    id, root,
+    update: (g, dt) => {
+      const moving = Math.min(1, g.speed / 0.6);
+      const running = Math.min(1, Math.max(0, (g.speed - g.walkSpeed * 1.15) / (g.sprintSpeed * 0.7 - g.walkSpeed * 1.15)));
+      still.setEffectiveWeight(1 - moving);
+      walk.setEffectiveWeight(moving * (1 - running));
+      run.setEffectiveWeight(moving * running);
+      walk.setEffectiveTimeScale(Math.max(0.5, Math.min(2.2, g.speed / walkM.speed)));
+      run.setEffectiveTimeScale(Math.max(0.6, Math.min(2, g.speed / runM.speed)));
+      mixer.update(dt);
+    },
+    dispose: () => { mixer.stopAllAction(); disposeTree(root); },
+  };
+}
+
 // --- bones: a rigged model with no animation ---------------------------------
 
 async function loadBones(id: SuitId, loader: GLTFLoader): Promise<LoadedSuit> {
@@ -350,7 +426,8 @@ async function loadBones(id: SuitId, loader: GLTFLoader): Promise<LoadedSuit> {
  * NASA publishes its suits as solid, unjointed models. To make one walk like the game-art suits
  * we borrow the Quaternius astronaut's skeleton and animations (public domain): the skeleton is
  * scaled to fit inside the NASA suit, the suit's body and legs are attached to it, and the
- * artist's own walk, run and idle clips then move them. The arms are left in NASA's pose.
+ * artist's own walk, run and idle clips then move them. Arms are animated too where NASA posed
+ * them hanging clear of the body.
  */
 async function loadStatic(id: SuitId, loader: GLTFLoader, rig: StaticRig): Promise<LoadedSuit> {
   const [suitFile, donor] = await Promise.all([
@@ -384,7 +461,7 @@ async function loadStatic(id: SuitId, loader: GLTFLoader, rig: StaticRig): Promi
   const sides = ["L", "R"] as const; // the donor's left is the figure's own left: -X once it faces -Z
 
   // Size the whole skeleton by leg length, so hips, knees and the animated feet all stay in step.
-  const [hx, hy, hz] = rig.hip, sy = rig.shoulder[1];
+  const [hx, hy, hz] = rig.hip, [sx, sy, sz] = rig.shoulder;
   const size = hy / at(bone("UpperLegL")).y;
   holder.scale.setScalar(size);
   holder.position.set(rig.cx, 0, hz);
@@ -414,14 +491,49 @@ async function loadStatic(id: SuitId, loader: GLTFLoader, rig: StaticRig): Promi
   const geos = sources.map((m) => m.geometry.clone().applyMatrix4(m.matrixWorld));
   const armOf = (x: number, y: number, z: number) => {
     const ax = Math.abs(x - rig.cx);
-    const beside = step(ax, rig.armOut[0], rig.armOut[1]) * step(y, rig.armLow[0], rig.armLow[1]) * (1 - step(y, rig.armHigh[0], rig.armHigh[1]))
-      * (rig.armNotBehind ? 1 - step(z, rig.armNotBehind[0], rig.armNotBehind[1]) : 1);
+    const beside = step(ax, rig.armOut[0], rig.armOut[1]) * step(y, rig.armLow[0], rig.armLow[1]) * (1 - step(y, rig.armHigh[0], rig.armHigh[1]));
     const ahead = step(-z, rig.armAhead[0], rig.armAhead[1]) * step(ax, rig.aheadOut[0], rig.aheadOut[1])
       * step(y, rig.aheadLow[0], rig.aheadLow[1]) * (1 - step(y, rig.aheadHigh[0], rig.aheadHigh[1]));
     return Math.max(beside, ahead);
   };
-  // The arms stay as NASA posed them and ride on the chest. Bending them needs joints placed by
-  // hand: an automatic fit pinched the shoulders and tore the sleeves.
+  /** Turns a bone so that its child lies toward a point, and stretches the child out to reach it. */
+  const aim = (b: THREE.Object3D, child: THREE.Object3D, target: THREE.Vector3) => {
+    const from = at(b);
+    const turn = new THREE.Quaternion().setFromUnitVectors(at(child).sub(from).normalize(), target.clone().sub(from).normalize());
+    const parentQ = b.parent!.getWorldQuaternion(new THREE.Quaternion());
+    b.quaternion.copy(parentQ.clone().invert().multiply(turn).multiply(parentQ).multiply(b.quaternion));
+    root.updateMatrixWorld(true);
+    child.position.setLength(child.position.length() * (target.distanceTo(from) / at(child).distanceTo(from)));
+    root.updateMatrixWorld(true);
+  };
+  // Arms: lay the donor's arm bones along the suit's own arms (shoulder, elbow, wrist), so the
+  // sleeves are attached where the bones really are. Otherwise the arms ride on the chest.
+  const mean = (pts: THREE.Vector3[]) => pts.reduce((sum, q) => sum.add(q), new THREE.Vector3()).divideScalar(pts.length);
+  const arms = sides.map((side, i) => {
+    if (!rig.swingArms) return null;
+    const pts: THREE.Vector3[] = [];
+    for (const geo of geos) {
+      const pos = geo.attributes.position;
+      for (let k = 0; k < pos.count; k += 2) {
+        const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+        if ((x < rig.cx ? 0 : 1) === i && armOf(x, y, z) > 0.6) pts.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    if (pts.length < 40) return null;
+    const shoulder = new THREE.Vector3(rig.cx + (i ? sx : -sx), sy, sz);
+    const far = [...pts].sort((a, b) => b.distanceToSquared(shoulder) - a.distanceToSquared(shoulder)).slice(0, Math.ceil(pts.length * 0.12));
+    const hand = mean(far.map((q) => q.clone()));
+    const axis = hand.clone().sub(shoulder), len = axis.length();
+    axis.normalize();
+    // The elbow is wherever the middle of the arm actually is, off the straight line if the arm is bent.
+    const middle = pts.filter((q) => { const t = q.clone().sub(shoulder).dot(axis) / len; return t > 0.42 && t < 0.54; });
+    const elbow = middle.length > 5 ? mean(middle.map((q) => q.clone())) : shoulder.clone().lerp(hand, 0.48);
+    const upper = bone(`UpperArm${side}`), lower = bone(`LowerArm${side}`), wrist = bone(`Wrist${side}`);
+    place(upper, shoulder);
+    aim(upper, lower, elbow);
+    aim(lower, wrist, hand);
+    return { shoulder, elbow, hand };
+  });
   // Attach the suit's surface. Each vertex follows the bones of the region it sits in.
   const bones: THREE.Bone[] = [];
   armature.traverse((o) => { if ((o as THREE.Bone).isBone) bones.push(o as THREE.Bone); });
@@ -429,6 +541,7 @@ async function loadStatic(id: SuitId, loader: GLTFLoader, rig: StaticRig): Promi
   const slot = (name: string) => bones.indexOf(bone(name) as THREE.Bone);
   const hipsI = slot("Hips"), chestI = slot("Chest");
   const legI = sides.map((side) => ({ upper: slot(`UpperLeg${side}`), lower: slot(`LowerLeg${side}`), foot: slot(`Foot${side}`) }));
+  const armI = sides.map((side) => ({ upper: slot(`UpperArm${side}`), lower: slot(`LowerArm${side}`) }));
   const knee = at(bone("LowerLegL")).y;
   const waist: [number, number] = [rig.legBlend[1] + 0.08, rig.legBlend[1] + 0.3];
   for (const geo of geos) {
@@ -443,9 +556,19 @@ async function loadStatic(id: SuitId, loader: GLTFLoader, rig: StaticRig): Promi
       const trunk = Math.max(0, 1 - arm - leg);
       const picks: [number, number][] = [];
       const up = step(p.y, waist[0], waist[1]);
-      const chestShare = trunk * up + arm;
+      // An arm vertex leaves the chest gradually over the first hand's width past the shoulder
+      // joint, which keeps the shoulder from pinching, then follows the upper arm or the forearm.
+      const fit = arms[side];
+      let onArm = 0, fore = 0;
+      if (fit && arm > 0) {
+        const down = fit.elbow.clone().sub(fit.shoulder).normalize();
+        onArm = arm * step(p.clone().sub(fit.shoulder).dot(down), -0.03, 0.11);
+        fore = step(p.clone().sub(fit.elbow).dot(fit.hand.clone().sub(fit.elbow).normalize()), -0.06, 0.06);
+      }
+      const chestShare = trunk * up + arm - onArm;
       if (trunk > 0) picks.push([hipsI, trunk * (1 - up)]);
       if (chestShare > 0) picks.push([chestI, chestShare]);
+      if (fit && onArm > 0) picks.push([armI[side].lower, onArm * fore], [armI[side].upper, onArm * (1 - fore)]);
       if (leg > 0) {
         const foot = 1 - step(p.y, 0.1, 0.2); // the boot, which the animated foot bone plants on the ground
         const shin = (1 - step(p.y, knee - 0.07, knee + 0.07)) * (1 - foot);
@@ -476,6 +599,7 @@ export function loadSuit(id: SuitId, loader: GLTFLoader): Promise<LoadedSuit> {
   const rig = STATIC[id];
   if (rig) return loadStatic(id, loader, rig);
   if (id === "classic") return loadBones(id, loader);
+  if (id === "explorer") return loadWalkRun(id, loader, "astronaut_realistic.glb", Math.PI);
   return loadClips(id, loader, id === "rebel" ? REBEL : id === "amar" ? AMAR : undefined);
 }
 
