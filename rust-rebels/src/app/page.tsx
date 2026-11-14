@@ -28,7 +28,7 @@ export default function Home() {
             <p className="eyebrow">Interplanetary Survival Guide: Martian Map</p>
             <h1 id="hero-title">RUST<br /><span>REBELS.</span></h1>
             <p className="hero-copy">Science-rich Marswalks. Fewer wrong turns.<br />A scout-first, radiation-aware digital twin for human EVAs.</p>
-            <a className="button" href="#problem">See how it works <span aria-hidden="true">↗</span></a>
+            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><a className="text-link" href="#problem">See how it works</a></div>
           </div>
           <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Fictional expedition concept art</span></div>
         </section>
