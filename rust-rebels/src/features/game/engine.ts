@@ -1,6 +1,6 @@
 // Marswalk game engine: three.js scene, controls and the mission simulation.
 // Real data: terrain, rover waypoints, RAD dose series, DONKI storm record, NASA models.
-// Simulated: new hazards, vitals, consumables, scout detections, walking speed.
+// Simulated: new hazards, vitals, consumables, scout detections.
 
 import * as THREE from "three";
 import { loadSuit, measureSuit, strideLength, SUITS, type LoadedSuit, type SuitId } from "./suits";
@@ -17,15 +17,20 @@ const GOAL = { x: -1809, y: 1050, label: "Science stop · delta scarp" };
 
 const MARS_G = 3.72;
 const EYE = 1.7;
-const WALK = 2.2, SPRINT = 6.5; // m/s, game pace
+// Walking speed is the measured optimum for Mars gravity: 3.4 km/h, against 5.5 km/h on Earth
+// (Cavagna, Willems & Heglund, "Walking on Mars", Nature 393, 1998).
+const WALK = 3.4 / 3.6; // 0.94 m/s
+// Running has no such measurement, so it is scaled from an easy 3 m/s jog on Earth by keeping the
+// Froude number v^2 / (g * leg length) the same, which gives v_Mars = v_Earth * sqrt(g_Mars / g_Earth).
+const SPRINT = 3.0 * Math.sqrt(MARS_G / 9.81); // 1.85 m/s
 const CLOCK_RATE = 60; // mission seconds per real second
 const STORM_REPLAY = 600; // RAD seconds per real second during the storm
 const STORM_AT_PROGRESS = 0.3;
 const SCOUT_SPEED = 80;
 const SENSOR_RANGE = 70;
 const DRONE_MANUAL_SPEED = 14; // m/s when flown by hand
-const ROVER_SPEED = 4.5; // m/s. The real rover's top speed is about 0.04 m/s; this is game pace.
-const ROVER_RESCUE_SPEED = 7.5;
+const ROVER_SPEED = 2.2; // m/s, enough to keep up with a running astronaut. The real rover's top speed is about 0.04 m/s; this is game pace.
+const ROVER_RESCUE_SPEED = 3.2;
 const ROVER_FOLLOW_GAP = 11; // metres the rover keeps behind the astronaut
 const DOCK_RANGE = 6.5;
 const ROVER_MODEL_YAW = Math.PI; // the NASA model's front (arm, mast) faces +Z; turn it to face the drive direction
@@ -172,7 +177,7 @@ export class MarsEngine {
   private showcase = false;
   private suitPopAt = -10;
   private suitCache = new Map<SuitId, Promise<LoadedSuit>>();
-  private view: ViewMode = "fpv";
+  private view: ViewMode = "tpv";
   private mapZoom = 520;
   private autopilot = false;
   private locked = false;
@@ -254,6 +259,8 @@ export class MarsEngine {
   private rcPitch = -0.1;
   private droneAlt = 8; // metres above ground while flown by hand
   private droneVel = new THREE.Vector3();
+  /** Height over the ground to keep while holding where it was left, or null for the usual working height. */
+  private droneHoldAlt: number | null = null;
   private droneTilt = 0; // nose down, radians
   private droneBank = 0;
   private droneYawPrev = 0;
@@ -963,6 +970,7 @@ export class MarsEngine {
       this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
       this.droneMode = "hold";
       this.droneArrived = true;
+      this.droneHoldAlt = this.drone.position.y - this.world.heightAt(this.drone.position.x, this.drone.position.z); // stay at this height too
     }
     this.control = who;
     this.keys.clear();
@@ -1066,7 +1074,7 @@ export class MarsEngine {
       this.yaw += d * Math.min(1, dt * 3.5);
       this.pitch += (-0.08 - this.pitch) * Math.min(1, dt * 2);
       fwd = 1;
-      sprint = true; // auto-walk runs, so the whole story fits in about a minute
+      sprint = true; // auto-walk runs, to keep the story short
     } else if (this.control === "astronaut") {
       const k = this.keys;
       fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
@@ -1172,7 +1180,7 @@ export class MarsEngine {
       cap = DRONE_SPEED;
     } else {
       want = this.droneTarget;
-      alt = 10;
+      alt = this.droneMode === "hold" && this.droneHoldAlt != null ? this.droneHoldAlt : 10;
       cap = DRONE_SPEED;
     }
     const prev = this.drone.position.clone();
@@ -1251,6 +1259,7 @@ export class MarsEngine {
     }
     this.droneTarget = { x, z };
     this.droneMode = "goto";
+    this.droneHoldAlt = null;
     this.droneArrived = false;
     const d = Math.hypot(x - this.drone.position.x, z - this.drone.position.z);
     this.say(`Heading to ${label ?? "the marked point"}, ${Math.round(d)} m. About ${Math.ceil(d / DRONE_SPEED)} s.`, "info");
@@ -1307,6 +1316,7 @@ export class MarsEngine {
       this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
       this.droneMode = "hold";
       this.droneArrived = true;
+      this.droneHoldAlt = this.drone.position.y - this.world.heightAt(this.drone.position.x, this.drone.position.z); // stay at this height too
       return this.say("Holding position.", "info");
     }
     const named = this.shelters.find((s) => s.id !== "ROVER" && q.includes(s.id.toLowerCase()));
