@@ -28,7 +28,7 @@ Open http://localhost:3000 for the pitch and http://localhost:3000/app for the g
 - `src/app/page.tsx`: homepage content and sections
 - `src/app/app/page.tsx`: the Marswalk game at `/app`
 - `src/features/game/`: game engine (`engine.ts`, three.js), terrain lookups and route solver (`world.ts`), HUD (`MarsGame.tsx`, `game.css`)
-- `public/draco/`: Draco decoder copied from three.js, needed to load the compressed suit model
+- `public/draco/`: Draco decoder copied from three.js, needed to load NASA's compressed suit models
 - `public/dataset/`: NASA terrain, radiation and model files the game loads; see `dataset/README.md`
 - `src/app/layout.tsx`: root layout and site metadata
 - `src/app/globals.css`: Tailwind import and visual styles
@@ -71,6 +71,7 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | B | Call SuperJar back |
 | Q | Remote control: SuperJar, then the rover, then back to you. The camera follows the one you drive |
 | F | Rover follow / park |
+| Suit button | Change the astronaut's suit: four game-art suits and three NASA suit models. Also on the start screen |
 | E | Beside the rover: plug in for oxygen and battery |
 | R | Restart the mission |
 

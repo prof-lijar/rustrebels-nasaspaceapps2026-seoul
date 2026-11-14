@@ -3,6 +3,7 @@
 // Simulated: new hazards, vitals, consumables, scout detections, walking speed.
 
 import * as THREE from "three";
+import { loadSuit, measureSuit, strideLength, SUITS, type LoadedSuit, type SuitId } from "./suits";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CELL, GRID, MAX_SLOPE_DEG, SITE_M, World, pathLength, pointAlong, progressAlong, solveRoute, type Blocker, type TerrainMeta, type Vec2 } from "./world";
@@ -16,7 +17,7 @@ const GOAL = { x: -1809, y: 1050, label: "Science stop · delta scarp" };
 
 const MARS_G = 3.72;
 const EYE = 1.7;
-const WALK = 3.2, SPRINT = 6.5; // m/s, game pace
+const WALK = 2.2, SPRINT = 6.5; // m/s, game pace
 const CLOCK_RATE = 60; // mission seconds per real second
 const STORM_REPLAY = 600; // RAD seconds per real second during the storm
 const STORM_AT_PROGRESS = 0.3;
@@ -97,6 +98,7 @@ export type HudState = {
   /** The rover's driving sound, switched on its own tab. The master switch still mutes it. */
   roverSound: boolean;
   control: Control;
+  suit: SuitId;
   /** While flying SuperJar by hand: height over the ground (m), speed (m/s) and climb rate (m/s). */
   flightAlt: number;
   flightSpeed: number;
@@ -158,9 +160,12 @@ export class MarsEngine {
   private speed = 0;
   private walkPhase = 0;
   private astronaut = new THREE.Group();
-  private limbs: THREE.Object3D[] = [];
-  private suit?: THREE.Object3D; // NASA Z2 suit model; replaces the placeholder figure once loaded
-  private rig?: { thighL: THREE.Bone; thighR: THREE.Bone; shinL: THREE.Bone; shinR: THREE.Bone; armL: THREE.Bone; armR: THREE.Bone };
+  // Astronaut: one of several open suit models, chosen by the player (see suits.ts).
+  private suit?: LoadedSuit;
+  private suitId: SuitId = "rebel";
+  private suitWanted: SuitId = "rebel";
+  private suitLoader?: GLTFLoader;
+  private suitCache = new Map<SuitId, Promise<LoadedSuit>>();
   private view: ViewMode = "fpv";
   private mapZoom = 520;
   private autopilot = false;
@@ -432,35 +437,7 @@ export class MarsEngine {
   }
 
   private buildAstronaut(): void {
-    const suit = new THREE.MeshStandardMaterial({ color: 0xf1ece2, roughness: 0.75 });
-    const rust = new THREE.MeshStandardMaterial({ color: 0xf0703a, roughness: 0.6 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.8 });
-    const visor = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.9, roughness: 0.18 });
-    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = this.astronaut) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      parent.add(m);
-      return m;
-    };
-    add(new THREE.CapsuleGeometry(0.27, 0.42, 6, 14), suit, 0, 1.15, 0);
-    add(new THREE.BoxGeometry(0.5, 0.62, 0.26), suit, 0, 1.22, 0.27); // life-support pack
-    add(new THREE.BoxGeometry(0.52, 0.08, 0.28), rust, 0, 1.5, 0.27);
-    add(new THREE.SphereGeometry(0.24, 20, 16), suit, 0, 1.72, 0);
-    add(new THREE.SphereGeometry(0.19, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), visor, 0, 1.73, -0.1).rotation.x = -Math.PI / 2;
-    add(new THREE.TorusGeometry(0.2, 0.035, 8, 20), rust, 0, 1.52, 0).rotation.x = Math.PI / 2;
-    const limb = (x: number, y: number, len: number, rad: number, tip: THREE.Material) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      add(new THREE.CapsuleGeometry(rad, len, 4, 10), suit, 0, -len / 2 - rad * 0.4, 0, pivot);
-      add(new THREE.SphereGeometry(rad * 1.15, 10, 8), tip, 0, -len - rad * 1.2, 0, pivot);
-      this.astronaut.add(pivot);
-      this.limbs.push(pivot);
-    };
-    limb(-0.16, 0.86, 0.5, 0.115, dark); // legs
-    limb(0.16, 0.86, 0.5, 0.115, dark);
-    limb(-0.38, 1.42, 0.42, 0.09, rust); // arms
-    limb(0.38, 1.42, 0.42, 0.09, rust);
-    this.scene.add(this.astronaut);
+    this.scene.add(this.astronaut); // the model itself arrives in loadModels()
   }
 
   private buildBeacon(): void {
@@ -509,19 +486,12 @@ export class MarsEngine {
       wrap.add(obj);
       return wrap;
     };
-    const [rover, heli, suit] = await Promise.allSettled([
+    this.suitLoader = loader;
+    const [rover, heli] = await Promise.allSettled([
       loader.loadAsync(`${DATA}/models/perseverance.glb`),
       loader.loadAsync(`${DATA}/models/ingenuity.glb`),
-      loader.loadAsync(`${DATA}/models/z2_spacesuit.glb`),
+      this.setSuit(this.suitWanted),
     ]);
-    if (suit.status === "fulfilled") {
-      const posed = fit(suit.value.scene, 1.95);
-      posed.rotation.y = Math.PI; // the model faces +Z; the player faces -Z
-      this.suit = this.rigSuit(posed) ?? posed;
-      this.astronaut.clear();
-      this.limbs = [];
-      this.astronaut.add(this.suit);
-    }
     if (rover.status === "fulfilled") {
       const r = fit(rover.value.scene, 3.4);
       r.rotation.y = ROVER_MODEL_YAW;
@@ -548,62 +518,6 @@ export class MarsEngine {
     glow.position.y = 0.5;
     this.drone.add(glow);
     this.scene.add(this.drone);
-  }
-
-  /**
-   * NASA ships the Z2 suit as one unjointed mesh. To make it walk we add our own skeleton:
-   * six bones (thighs, shins, arms) and per-vertex weights chosen from where each vertex sits.
-   * Measured on the model at 1.95 m tall, facing -Z: legs are separate below 0.7 m, the hips
-   * end near 0.8 m, and the arms are the parts outside the torso or reaching forward of it.
-   */
-  private rigSuit(posed: THREE.Object3D): THREE.Object3D | null {
-    let source: THREE.Mesh | undefined;
-    posed.updateMatrixWorld(true);
-    posed.traverse((o) => { if ((o as THREE.Mesh).isMesh && !source) source = o as THREE.Mesh; });
-    if (!source) return null;
-    const geo = source.geometry.clone().applyMatrix4(source.matrixWorld);
-    const pos = geo.attributes.position;
-    const n = pos.count;
-    const skinIndex = new Uint16Array(n * 4);
-    const skinWeight = new Float32Array(n * 4);
-    const step = (v: number, a: number, b: number) => { const k = Math.min(1, Math.max(0, (v - a) / (b - a))); return k * k * (3 - 2 * k); };
-    const BODY = 0, THIGH_L = 1, SHIN_L = 2, THIGH_R = 3, SHIN_R = 4, ARM_L = 5, ARM_R = 6;
-    for (let i = 0; i < n; i++) {
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ax = Math.abs(x);
-      const leg = 1 - step(y, 0.68, 0.84);
-      const shin = leg * (1 - step(y, 0.36, 0.48));
-      const thigh = leg - shin;
-      const beside = step(ax, 0.25, 0.31) * step(y, 0.9, 0.98) * (1 - step(y, 1.5, 1.58)) * (1 - step(z, 0.1, 0.18));
-      const ahead = step(-z, 0.16, 0.24) * step(ax, 0.12, 0.18) * step(y, 0.88, 0.94) * (1 - step(y, 1.36, 1.44));
-      const arm = Math.max(beside, ahead) * (1 - leg);
-      const left = x < 0;
-      const o = i * 4;
-      skinIndex[o] = BODY; skinWeight[o] = Math.max(0, 1 - leg - arm);
-      skinIndex[o + 1] = left ? THIGH_L : THIGH_R; skinWeight[o + 1] = thigh;
-      skinIndex[o + 2] = left ? SHIN_L : SHIN_R; skinWeight[o + 2] = shin;
-      skinIndex[o + 3] = left ? ARM_L : ARM_R; skinWeight[o + 3] = arm;
-    }
-    geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndex, 4));
-    geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeight, 4));
-
-    const bone = (x: number, y: number, z: number, parent?: THREE.Bone) => {
-      const b = new THREE.Bone();
-      b.position.set(x, y, z);
-      parent?.add(b);
-      return b;
-    };
-    const body = bone(0, 0, 0);
-    const thighL = bone(-0.16, 0.8, 0.07, body), shinL = bone(-0.03, -0.38, 0, thighL);
-    const thighR = bone(0.16, 0.8, 0.07, body), shinR = bone(0.03, -0.38, 0, thighR);
-    const armL = bone(-0.3, 1.42, 0.05, body), armR = bone(0.3, 1.42, 0.05, body);
-    const mesh = new THREE.SkinnedMesh(geo, source.material);
-    mesh.add(body);
-    mesh.bind(new THREE.Skeleton([body, thighL, shinL, thighR, shinR, armL, armR]));
-    mesh.frustumCulled = false;
-    this.rig = { thighL, thighR, shinL, shinR, armL, armR };
-    const wrap = new THREE.Group();
-    wrap.add(mesh);
-    return wrap;
   }
 
   // --- mission --------------------------------------------------------------
@@ -963,6 +877,31 @@ export class MarsEngine {
 
   setView(v: ViewMode): void { this.view = v; }
 
+  /** Changes the astronaut's suit. Models load on first use and are kept for switching back. */
+  async setSuit(id: SuitId): Promise<void> {
+    if (!SUITS.some((s) => s.id === id)) return;
+    this.suitWanted = id;
+    if (!this.suitLoader) return; // picked before the scene finished loading; loadModels() applies it
+    let pending = this.suitCache.get(id);
+    if (!pending) this.suitCache.set(id, (pending = loadSuit(id, this.suitLoader)));
+    try {
+      const suit = await pending;
+      if (this.suitWanted !== id) return; // the player picked another while this one loaded
+      if (this.suit) this.astronaut.remove(this.suit.root);
+      this.suit = suit;
+      this.suitId = id;
+      this.astronaut.add(suit.root);
+    } catch {
+      this.suitCache.delete(id);
+      this.say(`The ${SUITS.find((s) => s.id === id)?.name} suit failed to load.`, "warn");
+    }
+  }
+
+  /** Development aid: prints a side-on outline of a suit model, for placing joints on it. */
+  measureSuit(file: string, yaw = 0): Promise<string[]> {
+    return this.suitLoader ? measureSuit(file, this.suitLoader, yaw) : Promise.resolve([]);
+  }
+
   /**
    * Hands the keys and the camera to the rover or to SuperJar, or back to the astronaut.
    * The astronaut stays where they are while driving remotely.
@@ -1117,7 +1056,8 @@ export class MarsEngine {
       }
     }
     this.speed += (moved / Math.max(dt, 1e-4) - this.speed) * Math.min(1, dt * 8);
-    this.walkPhase += moved * 1.9;
+    // One walk cycle is two steps; the stride lengthens with speed, as a person's does.
+    this.walkPhase += (moved * Math.PI * 2) / strideLength(this.speed);
 
     const ground = this.world.heightAt(this.pos.x, this.pos.z);
     if (!this.grounded) {
@@ -1814,6 +1754,7 @@ export class MarsEngine {
       sound: this.soundOn,
       roverSound: this.roverSoundOn,
       control: this.control,
+      suit: this.suitId,
       flightAlt: this.droneAlt,
       flightSpeed: this.droneVel.length(),
       flightClimb: this.droneVel.y,
@@ -1871,27 +1812,7 @@ export class MarsEngine {
     this.astronaut.position.copy(this.pos);
     this.astronaut.rotation.y = -this.yaw;
     this.astronaut.scale.setScalar(this.view === "map" ? Math.max(1, this.mapZoom / 70) : 1);
-    const swing = Math.sin(this.walkPhase) * 0.75 * Math.min(1, this.speed / WALK);
-    this.limbs.forEach((l, i) => { l.rotation.x = (i % 2 ? -swing : swing) * (i < 2 ? 1 : -0.8); });
-    if (this.suit) {
-      const gait = Math.min(1, this.speed / WALK);
-      this.suit.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.07 * gait;
-      this.suit.rotation.z = Math.sin(this.walkPhase) * 0.05 * gait;
-      this.suit.rotation.x = -0.06 * gait * Math.min(2, this.speed / WALK);
-    }
-    if (this.rig) {
-      const gait = Math.min(1, this.speed / WALK);
-      const run = Math.min(1, Math.max(0, (this.speed - WALK) / (SPRINT - WALK)));
-      const reach = (0.5 + run * 0.25) * gait; // thigh swing, radians
-      const a = this.walkPhase, air = this.grounded ? 0 : 0.35;
-      // Positive X rotation swings a limb forward (the figure faces -Z); knees only fold backward.
-      this.rig.thighL.rotation.x = Math.sin(a) * reach + air;
-      this.rig.thighR.rotation.x = -Math.sin(a) * reach + air;
-      this.rig.shinL.rotation.x = -(0.08 + (0.75 + run * 0.4) * Math.max(0, Math.cos(a + 0.5))) * gait - air * 1.6;
-      this.rig.shinR.rotation.x = -(0.08 + (0.75 + run * 0.4) * Math.max(0, -Math.cos(a + 0.5))) * gait - air * 1.6;
-      this.rig.armL.rotation.x = -Math.sin(a) * 0.3 * gait;
-      this.rig.armR.rotation.x = Math.sin(a) * 0.3 * gait;
-    }
+    this.suit?.update({ phase: this.walkPhase, speed: this.speed, grounded: this.grounded, walkSpeed: WALK, sprintSpeed: SPRINT }, dt);
     if (this.routeMesh) (this.routeMesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(this.realT * 4) * 0.25;
     (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.realT * 3) * 0.07;
 

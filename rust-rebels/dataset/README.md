@@ -40,7 +40,9 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | `audio/sounds_of_mars.mp3` | Sound track of NASA's "Sounds of Mars" compilation video (149 s), uncut. Not used in the game | NASA/JPL-Caltech |
 | `video/jezero_delta_overview.mp4`, `video/ingenuity_third_flight.mp4` | 720p clips with poster frames | NASA/JPL-Caltech |
 | `models/perseverance.glb`, `models/ingenuity.glb` | NASA 3D models, unchanged | NASA/JPL-Caltech |
-| `models/z2_spacesuit.glb` | NASA Z2 planetary-surface prototype suit, the player figure. Textures reduced from 4096 to 1024 px, geometry untouched. The game adds its own skeleton at load time so it can walk | NASA 3D Resources |
+| `models/z2_spacesuit.glb`, `models/mark3_spacesuit.glb`, `models/aces_suit.glb` | NASA suit models the player can wear: the Z2 planetary-surface prototype, the Mark III technology demonstrator and the orange Advanced Crew Escape Suit. Z2 textures are reduced from 4096 to 1024 px; the other two are unchanged. NASA publishes them without joints, so at load time the game fits the Quaternius astronaut's skeleton inside each suit and plays its animations on it (`src/features/game/suits.ts`). | NASA |
+| `models/astronaut.glb` | "Astronaut" by Quaternius, unchanged. Rigged, with the artist's own walk, run and idle animations. Worn as three of the game's suits, two of them recoloured in code. Not a NASA model. | Quaternius, public domain (CC0) |
+| `models/astronaut_classic.glb` | "Rigged Astronaut" by J-Toastie, unchanged. Rigged but not animated; the game drives its skeleton. Not a NASA model. | J-Toastie, CC BY 3.0 |
 
 ## Sources
 
@@ -56,7 +58,9 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | Perseverance microphone clips | https://science.nasa.gov/resource/perseverance-rovers-supercam-records-wind-on-mars/ and the sibling resource pages named in `fetch_raw.py` | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
 | Videos | https://images.nasa.gov/ | NASA/JPL-Caltech |
 | 3D models | https://mars.nasa.gov/system/resources/gltf_files/ | NASA/JPL-Caltech |
-| Z2 spacesuit model | https://github.com/nasa/NASA-3D-Resources/tree/master/3D%20Models/Z2%20Spacesuit | NASA (the repository states its assets are free and without copyright) |
+| NASA suit models | https://github.com/nasa/NASA-3D-Resources/tree/master/3D%20Models (folders `Z2 Spacesuit`, `Mark III Spacesuit`, `Advanced Crew Escape Suit`) | NASA (the repository states its assets are free and without copyright) |
+| Astronaut model | https://poly.pizza/m/3hC2i0CTuO | Quaternius, public domain (CC0) |
+| Rigged Astronaut model | https://poly.pizza/m/0oBRDJ9Zl9 | J-Toastie, CC BY 3.0: credit required |
 
 NASA media is generally free to use with credit and without implying NASA endorsement. Show the credits above in the app.
 
