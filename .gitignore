@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Editor / tooling state
+.obsidian/
+.playwright-mcp/
+.claude/
+**/Trash Can/
+
+# Event materials not owned by the team
+*.pdf
