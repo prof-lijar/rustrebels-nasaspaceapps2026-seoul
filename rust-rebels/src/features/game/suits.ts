@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export type SuitId = "explorer" | "rebel" | "amar" | "stealth" | "classic" | "aces" | "emu";
+export type SuitId = "explorer" | "android" | "rebel" | "amar" | "stealth" | "classic" | "aces" | "emu";
 
 export interface SuitInfo {
   id: SuitId;
@@ -23,6 +23,7 @@ export const SUITS: SuitInfo[] = [
   { id: "amar", name: "Field Scientist", kind: "Fancy", note: "Sand and teal", credit: "Astronaut by Quaternius (CC0), recoloured" },
   { id: "stealth", name: "Night Shift", kind: "Fancy", note: "Dark armour, original colours", credit: "Astronaut by Quaternius (CC0)" },
   { id: "classic", name: "Classic EVA", kind: "Fancy", note: "White suit, gold visor, backpack", credit: "Rigged Astronaut by J-Toastie (CC BY 3.0)" },
+  { id: "android", name: "Android", kind: "Fancy", note: "Robot crew member with its own walk and run", credit: "Android (rigged), supplied by the team" },
   { id: "emu", name: "NASA EMU", kind: "NASA", note: "The spacewalk suit used on the Space Station", credit: "NASA Science 3D Resources" },
   { id: "aces", name: "NASA ACES", kind: "NASA", note: "Orange launch-and-entry suit", credit: "NASA 3D Resources" },
 ];
@@ -600,6 +601,7 @@ export function loadSuit(id: SuitId, loader: GLTFLoader): Promise<LoadedSuit> {
   if (rig) return loadStatic(id, loader, rig);
   if (id === "classic") return loadBones(id, loader);
   if (id === "explorer") return loadWalkRun(id, loader, "astronaut_realistic.glb", Math.PI);
+  if (id === "android") return loadWalkRun(id, loader, "android.glb", Math.PI);
   return loadClips(id, loader, id === "rebel" ? REBEL : id === "amar" ? AMAR : undefined);
 }
 
