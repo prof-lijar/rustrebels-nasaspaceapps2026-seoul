@@ -1,7 +1,8 @@
 import Image from "next/image";
+import { AppTour } from "@/components/app-tour";
 import { SlideDeck } from "@/components/slide-deck";
 import { deck } from "@/lib/deck";
-import { crew, datasets, demoViews, hazards, links, payload, pipeline, stack, stats, stormSteps, waterVest, xrayLink } from "@/lib/content";
+import { appTour, crew, datasets, demoViews, hazards, links, payload, pipeline, stack, stats, stormSteps, waterVest, xrayLink } from "@/lib/content";
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
       <header className="site-header">
         <a className="wordmark" href="#" aria-label="Rust Rebels home">RR<span> / </span>RUST REBELS</a>
         <nav aria-label="Main navigation">
+          <a href="#marswalk">App</a>
           <a href="#problem">Problem</a>
           <a href="#system">System</a>
           <a href="#storm">Storm</a>
@@ -31,6 +33,16 @@ export default function Home() {
             <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><a className="text-link" href="#problem">See how it works</a></div>
           </div>
           <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Fictional expedition concept art</span></div>
+        </section>
+
+        <section className="section" id="marswalk" aria-labelledby="marswalk-title">
+          <p className="eyebrow">00 / The app</p>
+          <div>
+            <h2 id="marswalk-title">Marswalk,<br />screen by screen.</h2>
+            <p>Six moments from the playable map. Use the arrows to step through, then try it yourself.</p>
+            <AppTour slides={appTour} />
+            <a className="text-link" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a>
+          </div>
         </section>
 
         <section className="section" id="problem" aria-labelledby="problem-title">

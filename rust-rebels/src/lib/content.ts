@@ -84,3 +84,43 @@ export const links = {
   github: "https://github.com/prof-lijar/rustrebels-nasaspaceapps2026-seoul",
   challenge: "https://www.spaceappschallenge.org/2026/challenges/interplanetary-survival-guide-martian-map/",
 };
+
+/** Screens captured from the Marswalk app for the tour under the home page hero. */
+export const appTour = [
+  {
+    src: "/images/marswalk/01-start.jpg",
+    alt: "Marswalk start screen: the title, the suit picker, and an astronaut in a white and orange suit walking on Mars.",
+    title: "Suit up",
+    brief: "Pick a suit, from NASA's own EMU and ACES models to game-art designs, and step out at a Perseverance waypoint in Jezero crater.",
+  },
+  {
+    src: "/images/marswalk/02-walk.jpg",
+    alt: "Third-person view of the astronaut walking across Jezero, with panels for SuperJar, the minimap, suit vitals and radiation.",
+    title: "Walk real terrain",
+    brief: "The ground is NASA's HiRISE map of Jezero. You walk at 3.4 km/h, the pace measured for Mars gravity, while the panels track your suit and the radiation dose.",
+  },
+  {
+    src: "/images/marswalk/03-map.jpg",
+    alt: "Expanded map of the delta front showing the route to the science stop and four flagged hazards.",
+    title: "Plan on the map",
+    brief: "SuperJar flags boulders, soft sand and rockfall the base map lacks, and the route bends around them and any slope over 25°. Click a point to send SuperJar or the rover there.",
+  },
+  {
+    src: "/images/marswalk/04-rover.jpg",
+    alt: "Chase view of the Perseverance rover under remote control, with the astronaut standing ahead marked YOU.",
+    title: "Drive the rover",
+    brief: "The rover follows you, comes when called and recharges your suit. Take remote control and its wheels steer and its suspension rides the ground.",
+  },
+  {
+    src: "/images/marswalk/05-superjar.jpg",
+    alt: "Chase view of the SuperJar helicopter drone flying low over the sand under remote control.",
+    title: "Fly SuperJar",
+    brief: "Order the scout drone in plain words, or take the stick yourself: it flies where you look, banks into turns and reports what it finds.",
+  },
+  {
+    src: "/images/marswalk/06-storm.jpg",
+    alt: "A red Solar Particle Event alert over the view as the astronaut runs toward the rover for shelter.",
+    title: "Survive the storm",
+    brief: "A solar storm replayed from Curiosity's September 2017 radiation record cuts the walk short. The rover drives to meet you while a red route leads you to shelter.",
+  },
+];
