@@ -33,12 +33,12 @@ web_video "$RAW/media/perseverance_explores_jezero_delta.mp4" "$OUT/video/jezero
 # 3D models: NASA's own glTF binaries. Rover and helicopter are unchanged.
 cp "$RAW/models/25042_Perseverance.glb" "$OUT/models/perseverance.glb"
 cp "$RAW/models/25043_Ingenuity_v3.glb" "$OUT/models/ingenuity.glb"
-# The Z2 suit ships 4096 px textures (17 MB); 1024 px is plenty at game distance (1 MB).
-python3 dataset/scripts/shrink_glb.py "$RAW/models/z2_spacesuit.glb" "$OUT/models/z2_spacesuit.glb" 1024
 # The other suits in the game's wardrobe, all unchanged.
 cp "$RAW/models/astronaut_quaternius.glb" "$OUT/models/astronaut.glb"
 cp "$RAW/models/astronaut_classic_jtoastie.glb" "$OUT/models/astronaut_classic.glb"
-cp "$RAW/models/mark3_spacesuit.glb" "$OUT/models/mark3_spacesuit.glb"
+# Supplied by hand (no download link recorded): place the file in dataset/raw/models/ first.
+cp "$RAW/models/astronaut_realistic.glb" "$OUT/models/astronaut_realistic.glb"
 cp "$RAW/models/aces_suit.glb" "$OUT/models/aces_suit.glb"
+cp "$RAW/models/emu_suit.glb" "$OUT/models/emu_suit.glb"
 
 ls -la "$OUT/audio" "$OUT/video" "$OUT/models"

@@ -162,9 +162,15 @@ export class MarsEngine {
   private astronaut = new THREE.Group();
   // Astronaut: one of several open suit models, chosen by the player (see suits.ts).
   private suit?: LoadedSuit;
-  private suitId: SuitId = "rebel";
-  private suitWanted: SuitId = "rebel";
+  private suitId: SuitId = "explorer";
+  private suitWanted: SuitId = "explorer";
   private suitLoader?: GLTFLoader;
+  // Suit preview: a small picture of the astronaut walking, drawn for the suit picker.
+  private preview?: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D };
+  private previewCam = new THREE.PerspectiveCamera(30, 0.75, 0.1, 9000);
+  // Start screen: the astronaut stands on the right of the picture, walking on the spot.
+  private showcase = false;
+  private suitPopAt = -10;
   private suitCache = new Map<SuitId, Promise<LoadedSuit>>();
   private view: ViewMode = "fpv";
   private mapZoom = 520;
@@ -890,11 +896,53 @@ export class MarsEngine {
       if (this.suit) this.astronaut.remove(this.suit.root);
       this.suit = suit;
       this.suitId = id;
+      this.suitPopAt = this.realT; // the new suit pops into view
       this.astronaut.add(suit.root);
     } catch {
       this.suitCache.delete(id);
       this.say(`The ${SUITS.find((s) => s.id === id)?.name} suit failed to load.`, "warn");
     }
+  }
+
+  /** Start-screen view: the chosen suit, large, on the right of the picture. */
+  setShowcase(on: boolean): void {
+    this.showcase = on;
+  }
+
+  /** Gives the engine a canvas to draw the walking-astronaut preview into, or null to stop. */
+  setPreview(canvas: HTMLCanvasElement | null): void {
+    const ctx = canvas?.getContext("2d");
+    this.preview = canvas && ctx ? { canvas, ctx } : undefined;
+  }
+
+  /**
+   * Draws the astronaut from the front into a corner of the main canvas, copies that corner to the
+   * preview canvas, and leaves the main picture to be drawn over it straight after.
+   */
+  private renderPreview(): void {
+    if (!this.preview || !this.suit) return;
+    const { canvas, ctx } = this.preview;
+    const gl = this.renderer.domElement, ratio = this.renderer.getPixelRatio();
+    const w = Math.min(canvas.width, gl.width), h = Math.min(canvas.height, gl.height);
+    const cam = this.previewCam;
+    const around = this.yaw + 0.55 + Math.sin(this.realT * 0.6) * 0.45; // sways a little so the suit is seen from both sides
+    cam.aspect = w / h;
+    cam.position.set(this.pos.x + Math.sin(around) * 3.7, this.pos.y + 1.2, this.pos.z - Math.cos(around) * 3.7);
+    cam.lookAt(this.pos.x, this.pos.y + 0.98, this.pos.z);
+    cam.updateProjectionMatrix();
+    const shown = this.astronaut.visible, size = this.astronaut.scale.x;
+    this.astronaut.visible = true;
+    this.astronaut.scale.setScalar(1);
+    this.sky?.position.copy(cam.position);
+    this.renderer.setViewport(0, 0, w / ratio, h / ratio);
+    this.renderer.setScissor(0, 0, w / ratio, h / ratio);
+    this.renderer.setScissorTest(true);
+    this.renderer.render(this.scene, cam);
+    ctx.drawImage(gl, 0, gl.height - h, w, h, 0, 0, canvas.width, canvas.height);
+    this.renderer.setScissorTest(false);
+    this.renderer.setViewport(0, 0, gl.width / ratio, gl.height / ratio);
+    this.astronaut.visible = shown;
+    this.astronaut.scale.setScalar(size);
   }
 
   /** Development aid: prints a side-on outline of a suit model, for placing joints on it. */
@@ -1804,19 +1852,38 @@ export class MarsEngine {
       cam.lookAt(focus.x, focus.y, focus.z);
       cam.fov = 50;
     }
+    if (this.showcase) {
+      // Seen from the front, swaying a little, and shifted so the figure stands in the right half
+      // of the picture, clear of the start screen's text.
+      const w = this.container.clientWidth, h = this.container.clientHeight;
+      const around = this.yaw + 0.45 + Math.sin(this.realT * 0.5) * 0.5;
+      cam.position.set(this.pos.x + Math.sin(around) * 4.4, this.pos.y + 1.15, this.pos.z - Math.cos(around) * 4.4);
+      cam.lookAt(this.pos.x, this.pos.y + 0.98, this.pos.z);
+      cam.fov = 36;
+      cam.setViewOffset(w, h, -0.24 * w, 0, w, h);
+    } else if (cam.view?.enabled) {
+      cam.clearViewOffset();
+    }
     cam.updateProjectionMatrix();
 
     if (this.routeLine) this.routeLine.visible = this.view === "map";
-    this.astronaut.visible = this.view !== "fpv" || remote;
+    this.astronaut.visible = this.view !== "fpv" || remote || this.showcase;
     this.drone.visible = !(this.view === "fpv" && this.control === "superjar"); // do not film the inside of the drone
     this.astronaut.position.copy(this.pos);
     this.astronaut.rotation.y = -this.yaw;
-    this.astronaut.scale.setScalar(this.view === "map" ? Math.max(1, this.mapZoom / 70) : 1);
-    this.suit?.update({ phase: this.walkPhase, speed: this.speed, grounded: this.grounded, walkSpeed: WALK, sprintSpeed: SPRINT }, dt);
+    // A newly chosen suit pops in: it grows from small, overshoots a touch and settles.
+    const pop = Math.min(1, (this.realT - this.suitPopAt) / 0.4);
+    const popScale = pop < 1 ? 0.55 + 0.45 * (1 + 2.2 * Math.pow(pop - 1, 3) + 1.2 * Math.pow(pop - 1, 2)) : 1;
+    this.astronaut.scale.setScalar((this.view === "map" && !this.showcase ? Math.max(1, this.mapZoom / 70) : 1) * popScale);
+    // While the suit picker is open the astronaut walks on the spot, so the suit is seen in motion.
+    // Suits driven by the step cycle (Classic EVA) need that cycle to keep turning while standing still.
+    if ((this.preview || this.showcase) && this.speed < 0.3) this.walkPhase += (dt * Math.PI * 2 * WALK) / strideLength(WALK);
+    this.suit?.update({ phase: this.walkPhase, speed: this.preview || this.showcase ? Math.max(this.speed, WALK) : this.speed, grounded: this.grounded, walkSpeed: WALK, sprintSpeed: SPRINT }, dt);
     if (this.routeMesh) (this.routeMesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(this.realT * 4) * 0.25;
     (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.realT * 3) * 0.07;
 
     // Keep the sky centred on the camera; a fixed dome falls outside the far plane near the site edges.
+    this.renderPreview();
     this.sky?.position.copy(cam.position);
     this.renderer.render(this.scene, cam);
     this.placeMarkers();

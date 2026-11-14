@@ -63,9 +63,6 @@ def models() -> None:
     base = "https://mars.nasa.gov/system/resources/gltf_files/"
     for name in ("25042_Perseverance.glb", "25043_Ingenuity_v3.glb"):
         get(base + name, RAW / "models" / name)
-    # Z2 planetary-surface prototype suit, from NASA's 3D Resources repository.
-    get("https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Z2%20Spacesuit/Z2%20Spacesuit.glb",
-        RAW / "models" / "z2_spacesuit.glb")
     # Astronaut by Quaternius (public domain, CC0), from Poly Pizza: https://poly.pizza/m/3hC2i0CTuO
     # It is rigged and comes with the artist's own walk, run and idle animations.
     get("https://static.poly.pizza/0076345b-bbea-42d5-931c-4a5ad2050b18.glb",
@@ -73,10 +70,12 @@ def models() -> None:
     # Rigged Astronaut by J-Toastie (CC BY 3.0), from Poly Pizza: https://poly.pizza/m/0oBRDJ9Zl9
     get("https://static.poly.pizza/d25085f1-dac6-462e-92b6-752c5af534bd.glb",
         RAW / "models" / "astronaut_classic_jtoastie.glb")
-    # Two more NASA suits from NASA's 3D Resources repository.
-    nasa3d = "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/"
-    get(nasa3d + "Mark%20III%20Spacesuit/Mark%20III%20Spacesuit.glb", RAW / "models" / "mark3_spacesuit.glb")
-    get(nasa3d + "Advanced%20Crew%20Escape%20Suit/Advanced%20Crew%20Escape%20Suit.glb", RAW / "models" / "aces_suit.glb")
+    # Advanced Crew Escape Suit, from NASA's 3D Resources repository.
+    get("https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Advanced%20Crew%20Escape%20Suit/Advanced%20Crew%20Escape%20Suit.glb",
+        RAW / "models" / "aces_suit.glb")
+    # Extravehicular Mobility Unit, from NASA Science: https://science.nasa.gov/3d-resources/extravehicular-mobility-unit/
+    get("https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/extravehicular-mobility-unit/Extravehicular%20Mobility%20Unit.glb",
+        RAW / "models" / "emu_suit.glb")
 
 
 MEDIA = {

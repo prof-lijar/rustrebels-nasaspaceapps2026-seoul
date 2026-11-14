@@ -71,7 +71,7 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | B | Call SuperJar back |
 | Q | Remote control: SuperJar, then the rover, then back to you. The camera follows the one you drive |
 | F | Rover follow / park |
-| Suit button | Change the astronaut's suit: four game-art suits and three NASA suit models. Also on the start screen |
+| Suit button | Change the astronaut's suit: five game-art suits and two NASA suit models (EMU and ACES). Also on the start screen |
 | E | Beside the rover: plug in for oxygen and battery |
 | R | Restart the mission |
 
