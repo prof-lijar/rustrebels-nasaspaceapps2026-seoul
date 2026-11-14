@@ -1,0 +1,99 @@
+{
+  "site": "Jezero crater: landing site to delta front",
+  "projection": {
+    "type": "equirectangular",
+    "lat_ts": 0,
+    "lon_0": 0,
+    "sphere_radius_m": 3396190.0,
+    "note": "x = R*radians(lon_east), y = R*radians(lat_north)"
+  },
+  "bounds_xy_m": {
+    "x_min": 4587660.0,
+    "y_min": 1091440.0,
+    "x_max": 4591756.0,
+    "y_max": 1095536.0
+  },
+  "bounds_lonlat": {
+    "west": 77.39659908338086,
+    "south": 18.413252966341275,
+    "east": 77.4657010808797,
+    "north": 18.482354963840113
+  },
+  "size_m": 4096.0,
+  "local_frame": "origin at site centre; +x east, +z south in three.js (row 0 = north edge), y up",
+  "elevation": {
+    "min_m": -2602.0,
+    "max_m": -2447.0,
+    "datum": "MOLA areoid",
+    "encoding": "uint16 little-endian; metres = min + value/65535*(max-min)"
+  },
+  "layers": {
+    "height_2048.u16": {
+      "px": 2048,
+      "m_per_px": 2
+    },
+    "height_1024.u16": {
+      "px": 1024,
+      "m_per_px": 4
+    },
+    "ortho_4096.jpg": {
+      "px": 4096,
+      "m_per_px": 1,
+      "note": "greyscale, contrast-stretched 0.5-99.5 percentile"
+    },
+    "ortho_2048.jpg": {
+      "px": 2048,
+      "m_per_px": 2
+    },
+    "slope_1024.png": {
+      "px": 1024,
+      "m_per_px": 4,
+      "encoding": "degrees = value/255*90",
+      "stats": {
+        "mean_deg": 4.109921932220459,
+        "p95_deg": 12.958206176757812,
+        "share_over_25deg": 0.008462905883789062
+      }
+    },
+    "skyview_1024.png": {
+      "px": 1024,
+      "m_per_px": 4,
+      "encoding": "sky fraction = value/255",
+      "stats": {
+        "min": 0.6393693089485168,
+        "mean": 0.9939761757850647
+      },
+      "note": "derived by us from the DTM: 16 azimuths, 600 m horizon search"
+    }
+  },
+  "context": {
+    "size_m": 20480.0,
+    "bounds_xy_m": {
+      "x_min": 4579468.0,
+      "y_min": 1083248.0,
+      "x_max": 4599948.0,
+      "y_max": 1103728.0
+    },
+    "context_ctx_2048.jpg": {
+      "px": 2048,
+      "m_per_px": 10.0
+    },
+    "context_height_512.u16": {
+      "px": 512,
+      "m_per_px": 40.0,
+      "min_m": -2689.0,
+      "max_m": -1651.0,
+      "nodata_filled_share": 0.0
+    }
+  },
+  "quality": {
+    "dtm_nodata_filled_share": 0.0,
+    "ortho_nodata_share": 0.0
+  },
+  "sources": {
+    "hirise_dtm": "https://planetarymaps.usgs.gov/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+    "hirise_ortho": "https://planetarymaps.usgs.gov/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first.tif",
+    "ctx": "https://planetarymaps.usgs.gov/mosaic/mars2020_trn/CTX/",
+    "credit": "NASA/JPL-Caltech/University of Arizona/MSSS/USGS Astrogeology Science Center (Mars 2020 Terrain Relative Navigation mosaics, Fergason et al. 2020)"
+  }
+}

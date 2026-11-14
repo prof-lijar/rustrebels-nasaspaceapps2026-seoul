@@ -1,0 +1,1018 @@
+// Marswalk game engine: three.js scene, controls and the mission simulation.
+// Real data: terrain, rover waypoints, RAD dose series, DONKI storm record, NASA models.
+// Simulated: new hazards, vitals, consumables, scout detections, walking speed.
+
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { CELL, GRID, MAX_SLOPE_DEG, SITE_M, World, pathLength, pointAlong, progressAlong, solveRoute, type Blocker, type TerrainMeta, type Vec2 } from "./world";
+
+const DATA = "/dataset";
+const HALF = SITE_M / 2;
+
+// Mission, in dataset coordinates (x east, y north). Both are real Perseverance waypoints.
+const BASE = { x: -1322, y: 564, label: "Rover base · sol 439 waypoint" };
+const GOAL = { x: -1809, y: 1050, label: "Science stop · delta scarp" };
+
+const MARS_G = 3.72;
+const EYE = 1.7;
+const WALK = 3.2, SPRINT = 6.5; // m/s, game pace
+const CLOCK_RATE = 60; // mission seconds per real second
+const STORM_REPLAY = 600; // RAD seconds per real second during the storm
+const STORM_AT_PROGRESS = 0.3;
+const SCOUT_SPEED = 80;
+const SENSOR_RANGE = 70;
+
+export type ViewMode = "fpv" | "tpv" | "map";
+export type Band = "green" | "amber" | "red";
+export type Phase = "scout" | "walk" | "storm" | "sheltered" | "arrived";
+
+export type HudState = {
+  view: ViewMode;
+  phase: Phase;
+  heading: number;
+  objective: string;
+  objectiveDist: number;
+  objectiveBearing: number;
+  missionMin: number;
+  doseRate: number;
+  baseline: number;
+  band: Band;
+  evaDose: number;
+  peakRate: number;
+  doseHistory: number[];
+  etaShelterS: number | null;
+  hr: number;
+  spo2: number;
+  o2: number;
+  battery: number;
+  suitKpa: number;
+  speed: number;
+  slope: number;
+  sky: number;
+  elevation: number;
+  lon: number;
+  lat: number;
+  log: { t: number; text: string; tone: "info" | "warn" | "alert" }[];
+  hazardsFound: number;
+  hazardsTotal: number;
+  uncertainty: number;
+  advice: string;
+  autopilot: boolean;
+  locked: boolean;
+  stormSource: string;
+  routeLeft: number;
+};
+
+type Hazard = { id: number; kind: "boulder" | "sand" | "rockfall"; label: string; x: number; z: number; r: number; found: boolean; mesh: THREE.Object3D; marker?: HTMLDivElement };
+type RadPoint = { t: number; e: number };
+type Shelter = { id: string; x: number; z: number; sky: number; label: string };
+type Marker = { el: HTMLDivElement; pos: THREE.Vector3; text: string; cls: string; show: () => boolean };
+
+function mulberry(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error(`Could not load ${src}`));
+    img.src = src;
+  });
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  const r = await fetch(`${DATA}/${path}`);
+  if (!r.ok) throw new Error(`Could not load ${path} (${r.status})`);
+  return r.json() as Promise<T>;
+}
+
+export class MarsEngine {
+  private renderer!: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera = new THREE.PerspectiveCamera(72, 1, 0.1, 9000);
+  private world!: World;
+  private meta!: TerrainMeta;
+  private ortho!: HTMLImageElement;
+  private raf = 0;
+  private last = 0;
+  private disposed = false;
+  private cleanup: (() => void)[] = [];
+
+  // player
+  private pos = new THREE.Vector3();
+  private vy = 0;
+  private grounded = true;
+  private yaw = 0;
+  private pitch = 0;
+  private keys = new Set<string>();
+  private speed = 0;
+  private walkPhase = 0;
+  private astronaut = new THREE.Group();
+  private limbs: THREE.Object3D[] = [];
+  private view: ViewMode = "fpv";
+  private mapZoom = 520;
+  private autopilot = false;
+  private locked = false;
+
+  // mission
+  private phase: Phase = "scout";
+  private realT = 0;
+  private route: Vec2[] = [];
+  private routeMesh?: THREE.InstancedMesh;
+  private routeLine?: THREE.Line;
+  private hazards: Hazard[] = [];
+  private shelters: Shelter[] = [];
+  private shelter?: Shelter;
+  private base!: Vec2;
+  private goal!: Vec2;
+  private drone = new THREE.Group();
+  private rotors: THREE.Object3D[] = [];
+  private droneDist = 0;
+  private rad: RadPoint[] = [];
+  private baseline = 11.15;
+  private onsetIdx = 0;
+  private stormT = 0;
+  private stormStartReal = 0;
+  private doseRate = 11;
+  private evaDose = 0;
+  private peakRate = 0;
+  private doseHistory: number[] = [];
+  private histAcc = 0;
+  private hr = 78;
+  private o2 = 100;
+  private battery = 100;
+  private log: HudState["log"] = [];
+  private stormSource = "";
+  private markers: Marker[] = [];
+  private beacon!: THREE.Mesh;
+  private hudAcc = 0;
+  private initialRouteLen = 1;
+
+  constructor(
+    private container: HTMLElement,
+    private markerLayer: HTMLDivElement,
+    private minimap: HTMLCanvasElement,
+    private onHud: (s: HudState) => void,
+    private onProgress: (msg: string) => void,
+  ) {}
+
+  // --- setup ----------------------------------------------------------------
+
+  async init(): Promise<void> {
+    this.onProgress("Loading HiRISE terrain");
+    const [meta, heightBuf, ortho, skyImg, rad, donki, shelters] = await Promise.all([
+      getJson<TerrainMeta>("terrain/terrain.json"),
+      fetch(`${DATA}/terrain/height_1024.u16`).then((r) => {
+        if (!r.ok) throw new Error("Could not load the heightmap");
+        return r.arrayBuffer();
+      }),
+      loadImage(`${DATA}/terrain/ortho_2048.jpg`),
+      loadImage(`${DATA}/terrain/skyview_1024.png`),
+      getJson<{ summary: { baseline_before_event: { e: number }; event_onset_reference_utc: string }; series: { t: string; e: number }[] }>("radiation/rad_sep_2017-09.json"),
+      getJson<{ events: { type: string; t: string; id: string; detail: string }[] }>("space-weather/donki_2017-09.json"),
+      getJson<{ shelters: { id: string; x: number; y: number; sky_fraction: number }[] }>("shelters/shelters.json"),
+    ]);
+    if (this.disposed) return;
+    this.meta = meta;
+    this.ortho = ortho;
+
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = GRID;
+    const cx = cv.getContext("2d", { willReadFrequently: true })!;
+    cx.drawImage(skyImg, 0, 0);
+    const px = cx.getImageData(0, 0, GRID, GRID).data;
+    const sky = new Uint8Array(GRID * GRID);
+    for (let i = 0; i < sky.length; i++) sky[i] = px[i * 4];
+    this.world = new World(new Uint16Array(heightBuf), sky, meta);
+
+    this.baseline = rad.summary.baseline_before_event.e;
+    const onset = Date.parse(rad.summary.event_onset_reference_utc);
+    this.rad = rad.series.filter((p) => p.e > 0).map((p) => ({ t: Date.parse(p.t) / 1000, e: p.e }));
+    // A few RAD records are a different, shorter observation mode that reads low; drop the outliers.
+    this.rad = this.rad.filter((p, i, a) => i === 0 || i === a.length - 1 || p.e > 0.6 * Math.min(a[i - 1].e, a[i + 1].e));
+    this.onsetIdx = Math.max(1, this.rad.findIndex((p) => p.t * 1000 >= onset));
+    const sep = donki.events.find((e) => e.type === "SEP" && e.t.startsWith("2017-09-10"));
+    this.stormSource = sep ? `DONKI ${sep.id} · ${sep.detail}` : "DONKI SEP record, 10 Sep 2017";
+
+    this.base = { x: BASE.x, z: -BASE.y };
+    this.goal = { x: GOAL.x, z: -GOAL.y };
+    this.shelters = [
+      { id: "ROVER", x: this.base.x, z: this.base.z, sky: this.world.skyAt(this.base.x, this.base.z), label: "Rover base" },
+      ...shelters.shelters.map((s) => ({ id: s.id, x: s.x, z: -s.y, sky: s.sky_fraction, label: `Terrain shelter ${s.id}` })),
+    ];
+
+    this.onProgress("Building the Martian surface");
+    this.setupRenderer();
+    this.buildSky();
+    this.buildTerrain();
+    this.buildAstronaut();
+    this.buildBeacon();
+    this.scatterRocks();
+    await this.loadModels();
+    if (this.disposed) return;
+
+    this.onProgress("SuperJar is solving the route");
+    this.resetMission();
+    this.bindInput();
+    this.last = performance.now();
+    this.raf = requestAnimationFrame(this.frame);
+  }
+
+  private setupRenderer(): void {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.container.appendChild(this.renderer.domElement);
+    const resize = () => {
+      const w = this.container.clientWidth, h = this.container.clientHeight;
+      this.renderer.setSize(w, h);
+      this.camera.aspect = w / Math.max(1, h);
+      this.camera.updateProjectionMatrix();
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    this.cleanup.push(() => window.removeEventListener("resize", resize));
+
+    this.scene.fog = new THREE.FogExp2(0xc79a72, 0.00042);
+    this.scene.add(new THREE.HemisphereLight(0xf2d2ae, 0x6b4630, 1.15));
+    const sun = new THREE.DirectionalLight(0xfff0dc, 2.3);
+    sun.position.set(-0.45, 0.62, 0.55);
+    this.scene.add(sun);
+  }
+
+  private buildSky(): void {
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: { top: { value: new THREE.Color(0x8d7a66) }, horizon: { value: new THREE.Color(0xd9ae84) }, sun: { value: new THREE.Vector3(-0.45, 0.62, 0.55).normalize() } },
+      vertexShader: "varying vec3 d; void main(){ d = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+      fragmentShader: `varying vec3 d; uniform vec3 top; uniform vec3 horizon; uniform vec3 sun;
+        void main(){ float h = clamp(d.y,0.0,1.0); vec3 c = mix(horizon, top, pow(h,0.55));
+          float s = max(dot(normalize(d), sun),0.0); c += vec3(0.75,0.82,1.0)*pow(s,900.0)*2.0 + vec3(0.35,0.42,0.55)*pow(s,14.0)*0.35;
+          gl_FragColor = vec4(c,1.0); }`,
+    });
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(8000, 32, 16), mat);
+    dome.renderOrder = -1;
+    this.scene.add(dome);
+    this.cleanup.push(() => { dome.geometry.dispose(); mat.dispose(); });
+  }
+
+  private buildTerrain(): void {
+    const n = GRID;
+    const posArr = new Float32Array(n * n * 3);
+    const uv = new Float32Array(n * n * 2);
+    const h = this.world.heights;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const i = r * n + c;
+        posArr[i * 3] = (c + 0.5) * CELL - HALF;
+        posArr[i * 3 + 1] = h[i];
+        posArr[i * 3 + 2] = (r + 0.5) * CELL - HALF;
+        uv[i * 2] = (c + 0.5) / n;
+        uv[i * 2 + 1] = 1 - (r + 0.5) / n;
+      }
+    }
+    const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+    let k = 0;
+    for (let r = 0; r < n - 1; r++) {
+      for (let c = 0; c < n - 1; c++) {
+        const a = r * n + c, b = a + 1, d = a + n, e = d + 1;
+        idx[k++] = a; idx[k++] = d; idx[k++] = b;
+        idx[k++] = b; idx[k++] = d; idx[k++] = e;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+
+    const map = new THREE.Texture(this.ortho);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    map.needsUpdate = true;
+
+    // Procedural grain so the ground holds up at walking distance. Decoration, not data.
+    const dc = document.createElement("canvas");
+    dc.width = dc.height = 256;
+    const dctx = dc.getContext("2d")!;
+    const img = dctx.createImageData(256, 256);
+    const rnd = mulberry(7);
+    for (let i = 0; i < 256 * 256; i++) {
+      const v = 150 + rnd() * 105;
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    dctx.putImageData(img, 0, 0);
+    const detail = new THREE.CanvasTexture(dc);
+    detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
+
+    const mat = new THREE.MeshLambertMaterial({ map, color: new THREE.Color(1.9, 1.08, 0.66) });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.detailMap = { value: detail };
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nuniform sampler2D detailMap;")
+        .replace(
+          "#include <map_fragment>",
+          `#include <map_fragment>
+           float dNear = texture2D(detailMap, vMapUv * 1400.0).r;
+           float dFar = texture2D(detailMap, vMapUv * 170.0).r;
+           diffuseColor.rgb *= mix(0.55, 1.3, dNear * 0.55 + dFar * 0.45);`,
+        );
+    };
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+    this.cleanup.push(() => { geo.dispose(); mat.dispose(); map.dispose(); detail.dispose(); });
+  }
+
+  private buildAstronaut(): void {
+    const suit = new THREE.MeshStandardMaterial({ color: 0xf1ece2, roughness: 0.75 });
+    const rust = new THREE.MeshStandardMaterial({ color: 0xf0703a, roughness: 0.6 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.8 });
+    const visor = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.9, roughness: 0.18 });
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = this.astronaut) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      parent.add(m);
+      return m;
+    };
+    add(new THREE.CapsuleGeometry(0.27, 0.42, 6, 14), suit, 0, 1.15, 0);
+    add(new THREE.BoxGeometry(0.5, 0.62, 0.26), suit, 0, 1.22, 0.27); // life-support pack
+    add(new THREE.BoxGeometry(0.52, 0.08, 0.28), rust, 0, 1.5, 0.27);
+    add(new THREE.SphereGeometry(0.24, 20, 16), suit, 0, 1.72, 0);
+    add(new THREE.SphereGeometry(0.19, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), visor, 0, 1.73, -0.1).rotation.x = -Math.PI / 2;
+    add(new THREE.TorusGeometry(0.2, 0.035, 8, 20), rust, 0, 1.52, 0).rotation.x = Math.PI / 2;
+    const limb = (x: number, y: number, len: number, rad: number, tip: THREE.Material) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      add(new THREE.CapsuleGeometry(rad, len, 4, 10), suit, 0, -len / 2 - rad * 0.4, 0, pivot);
+      add(new THREE.SphereGeometry(rad * 1.15, 10, 8), tip, 0, -len - rad * 1.2, 0, pivot);
+      this.astronaut.add(pivot);
+      this.limbs.push(pivot);
+    };
+    limb(-0.16, 0.86, 0.5, 0.115, dark); // legs
+    limb(0.16, 0.86, 0.5, 0.115, dark);
+    limb(-0.38, 1.42, 0.42, 0.09, rust); // arms
+    limb(0.38, 1.42, 0.42, 0.09, rust);
+    this.scene.add(this.astronaut);
+  }
+
+  private buildBeacon(): void {
+    const geo = new THREE.CylinderGeometry(1.6, 1.6, 260, 20, 1, true);
+    geo.translate(0, 130, 0);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x35e0c2, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    this.beacon = new THREE.Mesh(geo, mat);
+    this.scene.add(this.beacon);
+  }
+
+  /** Small scattered stones near the mission area. Decoration only. */
+  private scatterRocks(): void {
+    const rnd = mulberry(2026);
+    const count = 7000;
+    const geo = new THREE.DodecahedronGeometry(1, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x8a5a3c, flatShading: true });
+    const inst = new THREE.InstancedMesh(geo, mat, count);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    const cx = (BASE.x + GOAL.x) / 2, cz = -(BASE.y + GOAL.y) / 2;
+    for (let i = 0; i < count; i++) {
+      const x = cx + (rnd() - 0.5) * 1100, z = cz + (rnd() - 0.5) * 1100;
+      const size = 0.1 + Math.pow(rnd(), 3) * 0.8;
+      p.set(x, this.world.heightAt(x, z) + size * 0.25, z);
+      q.setFromEuler(new THREE.Euler(rnd() * 3, rnd() * 3, rnd() * 3));
+      s.set(size * (0.7 + rnd() * 0.6), size * (0.5 + rnd() * 0.4), size * (0.7 + rnd() * 0.6));
+      inst.setMatrixAt(i, m.compose(p, q, s));
+    }
+    this.scene.add(inst);
+    this.cleanup.push(() => { geo.dispose(); mat.dispose(); });
+  }
+
+  private async loadModels(): Promise<void> {
+    const loader = new GLTFLoader();
+    const fit = (obj: THREE.Object3D, size: number) => {
+      const box = new THREE.Box3().setFromObject(obj);
+      const dim = box.getSize(new THREE.Vector3());
+      const k = size / Math.max(dim.x, dim.y, dim.z);
+      obj.scale.setScalar(k);
+      const b2 = new THREE.Box3().setFromObject(obj);
+      const c = b2.getCenter(new THREE.Vector3());
+      obj.position.set(-c.x, -b2.min.y, -c.z);
+      const wrap = new THREE.Group();
+      wrap.add(obj);
+      return wrap;
+    };
+    const [rover, heli] = await Promise.allSettled([
+      loader.loadAsync(`${DATA}/models/perseverance.glb`),
+      loader.loadAsync(`${DATA}/models/ingenuity.glb`),
+    ]);
+    if (rover.status === "fulfilled") {
+      const r = fit(rover.value.scene, 3.4);
+      const rx = BASE.x + 9, rz = -BASE.y - 6;
+      r.position.set(rx, this.world.heightAt(rx, rz), rz);
+      r.rotation.y = 0.8;
+      this.scene.add(r);
+    }
+    if (heli.status === "fulfilled") {
+      heli.value.scene.traverse((o) => { if (/rotor/i.test(o.name)) this.rotors.push(o); });
+      this.drone.add(fit(heli.value.scene, 2.6)); // drawn about twice life size so it reads at distance
+    } else {
+      this.drone.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
+    }
+    const glow = new THREE.PointLight(0x35e0c2, 30, 40);
+    glow.position.y = 0.5;
+    this.drone.add(glow);
+    this.scene.add(this.drone);
+  }
+
+  // --- mission --------------------------------------------------------------
+
+  resetMission(): void {
+    for (const hz of this.hazards) {
+      this.scene.remove(hz.mesh);
+      hz.marker?.remove();
+    }
+    for (const mk of this.markers) mk.el.remove();
+    this.markers = [];
+    this.hazards = [];
+    this.phase = "scout";
+    this.realT = 0;
+    this.stormT = 0;
+    this.evaDose = 0;
+    this.peakRate = 0;
+    this.doseHistory = [];
+    this.o2 = 100;
+    this.battery = 100;
+    this.hr = 78;
+    this.log = [];
+    this.shelter = undefined;
+    this.droneDist = 0;
+    this.pos.set(this.base.x, this.world.heightAt(this.base.x, this.base.z), this.base.z);
+    this.vy = 0;
+    this.yaw = Math.atan2(this.goal.x - this.base.x, -(this.goal.z - this.base.z));
+    this.pitch = -0.05;
+
+    this.route = solveRoute(this.world, this.base, this.goal, []) ?? [this.base, this.goal];
+    this.initialRouteLen = pathLength(this.route);
+    this.placeHazards();
+    this.drawRoute();
+    this.beacon.position.set(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z), this.goal.z);
+    (this.beacon.material as THREE.MeshBasicMaterial).color.set(0x35e0c2);
+
+    this.addMarker(() => new THREE.Vector3(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z) + 4, this.goal.z), "SCIENCE STOP", "mg-mk-goal", () => this.phase !== "storm" && this.phase !== "sheltered");
+    this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map");
+
+    this.say("SuperJar launching. Scouting the route before you step out.", "info");
+    this.say(`Base map: HiRISE, ${Math.round(this.initialRouteLen)} m to the science stop.`, "info");
+  }
+
+  /** Invented obstacles the base map does not know about. Seeded, so every run is the same. */
+  private placeHazards(): void {
+    const rnd = mulberry(439);
+    const spec: { at: number; kind: Hazard["kind"]; label: string; r: number; side: number }[] = [
+      { at: 0.22, kind: "boulder", label: "NEW BOULDER", r: 5, side: 0 },
+      { at: 0.4, kind: "sand", label: "SOFT SAND", r: 16, side: 3 },
+      { at: 0.62, kind: "rockfall", label: "ROCKFALL", r: 11, side: -2 },
+      { at: 0.8, kind: "boulder", label: "NEW BOULDER", r: 4, side: 1 },
+    ];
+    const rockMat = new THREE.MeshLambertMaterial({ color: 0x70452e, flatShading: true });
+    const sandMat = new THREE.MeshLambertMaterial({ color: 0xd6a06a, transparent: true, opacity: 0.85 });
+    spec.forEach((s, id) => {
+      const p = pointAlong(this.route, this.initialRouteLen * s.at);
+      const x = p.x + s.side, z = p.z + s.side;
+      const y = this.world.heightAt(x, z);
+      const group = new THREE.Group();
+      if (s.kind === "sand") {
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(s.r, 40), sandMat);
+        disc.rotation.x = -Math.PI / 2;
+        disc.position.y = 0.12;
+        group.add(disc);
+      } else {
+        const n = s.kind === "rockfall" ? 9 : 1;
+        for (let i = 0; i < n; i++) {
+          const size = s.kind === "rockfall" ? 1.2 + rnd() * 2.2 : s.r * 0.75;
+          const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 1), rockMat);
+          const ox = n > 1 ? (rnd() - 0.5) * s.r * 1.5 : 0, oz = n > 1 ? (rnd() - 0.5) * s.r * 1.5 : 0;
+          rock.position.set(ox, this.world.heightAt(x + ox, z + oz) - y + size * 0.45, oz);
+          rock.scale.set(1, 0.72, 0.9);
+          rock.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+          group.add(rock);
+        }
+      }
+      group.position.set(x, y, z);
+      this.scene.add(group);
+      this.hazards.push({ id, kind: s.kind, label: s.label, x, z, r: s.r, found: false, mesh: group });
+    });
+  }
+
+  private blockers(): Blocker[] {
+    return this.hazards.filter((h) => h.found).map((h) => ({ x: h.x, z: h.z, r: h.r + 14 }));
+  }
+
+  private target(): Vec2 {
+    return this.phase === "storm" || this.phase === "sheltered" ? this.shelter ?? this.base : this.goal;
+  }
+
+  private resolveRoute(): void {
+    const from = { x: this.pos.x, z: this.pos.z };
+    const next = solveRoute(this.world, from, this.target(), this.blockers());
+    if (next) this.route = next;
+    else this.say("No safe route found. Holding the last known path.", "warn");
+    this.drawRoute();
+  }
+
+  private drawRoute(): void {
+    if (this.routeMesh) {
+      this.scene.remove(this.routeMesh);
+      this.routeMesh.geometry.dispose();
+      (this.routeMesh.material as THREE.Material).dispose();
+    }
+    const len = pathLength(this.route);
+    const count = Math.max(2, Math.floor(len / 3));
+    const geo = new THREE.CircleGeometry(0.34, 3);
+    geo.rotateX(-Math.PI / 2);
+    const storm = this.phase === "storm" || this.phase === "sheltered";
+    const mat = new THREE.MeshBasicMaterial({ color: storm ? 0xff5a3c : 0x35e0c2, transparent: true, opacity: 0.9, fog: false, depthWrite: false });
+    const inst = new THREE.InstancedMesh(geo, mat, count);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      const p = pointAlong(this.route, (i / (count - 1)) * len);
+      m.makeTranslation(p.x, this.world.heightAt(p.x, p.z) + 0.25, p.z);
+      inst.setMatrixAt(i, m);
+    }
+    inst.frustumCulled = false;
+    inst.renderOrder = 2;
+    this.routeMesh = inst;
+    this.scene.add(inst);
+
+    // A plain line reads better than the ground markers from the mission-map altitude.
+    if (this.routeLine) {
+      this.scene.remove(this.routeLine);
+      this.routeLine.geometry.dispose();
+      (this.routeLine.material as THREE.Material).dispose();
+    }
+    const linePts = this.route.map((p) => new THREE.Vector3(p.x, this.world.heightAt(p.x, p.z) + 1.5, p.z));
+    this.routeLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), new THREE.LineBasicMaterial({ color: storm ? 0xff5a3c : 0x35e0c2, fog: false, depthTest: false }));
+    this.routeLine.frustumCulled = false;
+    this.routeLine.renderOrder = 3;
+    this.scene.add(this.routeLine);
+  }
+
+  private addMarker(pos: () => THREE.Vector3, text: string, cls: string, show: () => boolean = () => true): Marker {
+    const el = document.createElement("div");
+    el.className = `mg-marker ${cls}`;
+    this.markerLayer.appendChild(el);
+    const mk: Marker = { el, pos: pos(), text, cls, show };
+    Object.defineProperty(mk, "pos", { get: pos });
+    this.markers.push(mk);
+    return mk;
+  }
+
+  private say(text: string, tone: "info" | "warn" | "alert"): void {
+    this.log.push({ t: this.realT, text, tone });
+    if (this.log.length > 30) this.log.shift();
+  }
+
+  private detect(h: Hazard): void {
+    h.found = true;
+    const y = this.world.heightAt(h.x, h.z);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(h.r + 1, h.r + 2.2, 48), new THREE.MeshBasicMaterial({ color: 0xff5a3c, transparent: true, opacity: 0.85, side: THREE.DoubleSide, fog: false, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.5;
+    h.mesh.add(ring);
+    this.addMarker(() => new THREE.Vector3(h.x, y + (h.kind === "sand" ? 2.5 : 7), h.z), h.label, "mg-mk-hazard");
+    this.say(`${h.label} at ${Math.round(progressAlong(this.route, h))} m. Not in the base map. Rerouting.`, "warn");
+    this.resolveRoute();
+  }
+
+  triggerStorm(): void {
+    if (this.phase === "storm" || this.phase === "sheltered") return;
+    this.phase = "storm";
+    this.stormT = 0;
+    this.stormStartReal = this.realT;
+    // Nearest shelter by straight-line distance: rover first when it is close.
+    const here = { x: this.pos.x, z: this.pos.z };
+    const d = (s: Shelter) => Math.hypot(s.x - here.x, s.z - here.z);
+    this.shelter = [...this.shelters].sort((a, b) => d(a) - d(b))[0];
+    const sh = this.shelter;
+    this.beacon.position.set(sh.x, this.world.heightAt(sh.x, sh.z), sh.z);
+    (this.beacon.material as THREE.MeshBasicMaterial).color.set(0xff5a3c);
+    this.addMarker(() => new THREE.Vector3(sh.x, this.world.heightAt(sh.x, sh.z) + 4, sh.z), "SHELTER", "mg-mk-shelter");
+    this.say("SOLAR PARTICLE EVENT. Proton rate rising.", "alert");
+    this.say(`${sh.label}, ${Math.round(d(sh))} m. Sky visible there: ${Math.round(sh.sky * 100)}%.`, "alert");
+    this.resolveRoute();
+  }
+
+  // --- input ----------------------------------------------------------------
+
+  private bindInput(): void {
+    const el = this.renderer.domElement;
+    const down = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      const k = e.code;
+      this.keys.add(k);
+      if (k === "KeyV") this.setView(this.view === "fpv" ? "tpv" : "fpv");
+      if (k === "KeyM") this.setView(this.view === "map" ? "fpv" : "map");
+      if (k === "Digit1") this.setView("fpv");
+      if (k === "Digit2") this.setView("tpv");
+      if (k === "Digit3") this.setView("map");
+      if (k === "KeyP") this.setAutopilot(!this.autopilot);
+      if (k === "KeyT") this.triggerStorm();
+      if (k === "KeyR") this.resetMission();
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot) this.setAutopilot(false);
+      if (k === "Space" || k.startsWith("Arrow")) e.preventDefault();
+    };
+    const up = (e: KeyboardEvent) => this.keys.delete(e.code);
+    const move = (e: MouseEvent) => {
+      if (!this.locked) return;
+      this.yaw += e.movementX * 0.0022;
+      this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - e.movementY * 0.0022));
+    };
+    const lock = () => { this.locked = document.pointerLockElement === el; if (!this.locked) this.keys.clear(); };
+    const wheel = (e: WheelEvent) => { if (this.view === "map") this.mapZoom = Math.max(160, Math.min(2600, this.mapZoom * (1 + Math.sign(e.deltaY) * 0.12))); };
+    const blur = () => this.keys.clear();
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    document.addEventListener("mousemove", move);
+    document.addEventListener("pointerlockchange", lock);
+    el.addEventListener("wheel", wheel, { passive: true });
+    el.addEventListener("click", () => this.requestLock());
+    this.cleanup.push(() => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("pointerlockchange", lock);
+    });
+  }
+
+  requestLock(): void {
+    const el = this.renderer?.domElement;
+    if (!el || this.locked) return;
+    // Pointer lock can be refused (no user gesture, embedded view); the game still runs on autopilot.
+    try { void (el.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {}); } catch { /* ignored */ }
+  }
+
+  setView(v: ViewMode): void { this.view = v; }
+  setAutopilot(on: boolean): void { this.autopilot = on; }
+
+  // --- simulation -----------------------------------------------------------
+
+  private frame = (now: number): void => {
+    if (this.disposed) return;
+    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000)); // the first rAF timestamp can precede init
+    this.last = now;
+    this.step(dt);
+    this.render(dt);
+    this.raf = requestAnimationFrame(this.frame);
+  };
+
+  private step(dt: number): void {
+    this.realT += dt;
+    this.movePlayer(dt);
+    this.moveDrone(dt);
+    this.updateRadiation(dt);
+    this.updateBody(dt);
+
+    const here = { x: this.pos.x, z: this.pos.z };
+    const done = progressAlong(this.route, here);
+    if (this.phase === "scout" && this.droneDist >= this.initialRouteLen) {
+      this.phase = "walk";
+      this.say(`Scout pass complete. ${this.hazards.filter((h) => h.found).length} changes since the base map. Route updated. You are go.`, "info");
+    }
+    if (this.phase === "walk") {
+      const total = 1 - Math.hypot(this.goal.x - here.x, this.goal.z - here.z) / Math.hypot(this.goal.x - this.base.x, this.goal.z - this.base.z);
+      if (total > STORM_AT_PROGRESS) this.triggerStorm();
+      else if (Math.hypot(this.goal.x - here.x, this.goal.z - here.z) < 8) {
+        this.phase = "arrived";
+        this.say("Science stop reached. Sampling window open.", "info");
+      }
+    }
+    if (this.phase === "storm" && this.shelter && Math.hypot(this.shelter.x - here.x, this.shelter.z - here.z) < 9) {
+      this.phase = "sheltered";
+      this.setAutopilot(false);
+      this.say(`In shelter after ${Math.round(this.realT - this.stormStartReal)} s. Hold until dose rate is under 1.2x baseline.`, "info");
+    }
+    void done;
+
+    this.hudAcc += dt;
+    if (this.hudAcc > 0.066) {
+      this.hudAcc = 0;
+      this.onHud(this.snapshot());
+      this.drawMinimap();
+    }
+  }
+
+  private movePlayer(dt: number): void {
+    let fwd = 0, strafe = 0, sprint = false;
+    if (this.autopilot && this.phase === "scout") {
+      // wait at base until the scout pass is done
+    } else if (this.autopilot && this.phase !== "sheltered" && this.phase !== "arrived") {
+      const here = { x: this.pos.x, z: this.pos.z };
+      const aim = pointAlong(this.route, progressAlong(this.route, here) + 9);
+      const want = Math.atan2(aim.x - here.x, -(aim.z - here.z));
+      let d = want - this.yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      this.yaw += d * Math.min(1, dt * 3.5);
+      this.pitch += (-0.08 - this.pitch) * Math.min(1, dt * 2);
+      fwd = 1;
+      sprint = true; // auto-walk runs, so the whole story fits in about a minute
+    } else {
+      const k = this.keys;
+      fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      strafe = (k.has("KeyD") ? 1 : 0) - (k.has("KeyA") ? 1 : 0);
+      if (k.has("ArrowLeft")) this.yaw -= dt * 1.8;
+      if (k.has("ArrowRight")) this.yaw += dt * 1.8;
+      sprint = k.has("ShiftLeft") || k.has("ShiftRight");
+      if (k.has("Space") && this.grounded) { this.vy = 3.3; this.grounded = false; }
+    }
+    const mag = Math.hypot(fwd, strafe);
+    let moved = 0;
+    if (mag > 0) {
+      const inSand = this.hazards.some((h) => h.kind === "sand" && Math.hypot(h.x - this.pos.x, h.z - this.pos.z) < h.r);
+      const v = (sprint ? SPRINT : WALK) * (inSand ? 0.35 : 1);
+      const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+      const dx = ((fwd * sin + strafe * cos) / mag) * v * dt;
+      const dz = ((-fwd * cos + strafe * sin) / mag) * v * dt;
+      let nx = this.pos.x + dx, nz = this.pos.z + dz;
+      // Too steep to climb in a suit: refuse uphill steps beyond 38 degrees.
+      const rise = this.world.heightAt(nx, nz) - this.world.heightAt(this.pos.x, this.pos.z);
+      const run = Math.hypot(dx, dz);
+      if (rise > run * Math.tan((38 * Math.PI) / 180) && this.grounded) { nx = this.pos.x; nz = this.pos.z; }
+      for (const h of this.hazards) {
+        if (h.kind === "sand") continue;
+        const rr = h.kind === "rockfall" ? h.r * 0.55 : h.r * 0.8;
+        const d = Math.hypot(nx - h.x, nz - h.z);
+        if (d < rr) { nx = h.x + ((nx - h.x) / (d || 1)) * rr; nz = h.z + ((nz - h.z) / (d || 1)) * rr; }
+      }
+      if (this.world.inBounds(nx, nz)) {
+        moved = Math.hypot(nx - this.pos.x, nz - this.pos.z);
+        this.pos.x = nx;
+        this.pos.z = nz;
+      }
+    }
+    this.speed += (moved / Math.max(dt, 1e-4) - this.speed) * Math.min(1, dt * 8);
+    this.walkPhase += moved * 1.9;
+
+    const ground = this.world.heightAt(this.pos.x, this.pos.z);
+    if (!this.grounded) {
+      this.vy -= MARS_G * dt;
+      this.pos.y += this.vy * dt;
+      if (this.pos.y <= ground) { this.pos.y = ground; this.vy = 0; this.grounded = true; }
+    } else {
+      this.pos.y = ground;
+    }
+  }
+
+  private moveDrone(dt: number): void {
+    const len = pathLength(this.route);
+    if (this.phase === "scout") {
+      this.droneDist = Math.min(this.initialRouteLen, this.droneDist + SCOUT_SPEED * dt);
+    } else {
+      const ahead = Math.min(len, progressAlong(this.route, { x: this.pos.x, z: this.pos.z }) + 34);
+      this.droneDist += (ahead - this.droneDist) * Math.min(1, dt * 1.6);
+    }
+    const p = pointAlong(this.route, Math.min(len, this.droneDist));
+    const alt = this.phase === "scout" ? 14 : 7;
+    const ty = this.world.heightAt(p.x, p.z) + alt + Math.sin(this.realT * 2.1) * 0.35;
+    const prev = this.drone.position.clone();
+    this.drone.position.lerp(new THREE.Vector3(p.x, ty, p.z), Math.min(1, dt * 4));
+    const mv = this.drone.position.clone().sub(prev);
+    if (mv.lengthSq() > 1e-5) this.drone.rotation.y = Math.atan2(mv.x, mv.z);
+    this.rotors.forEach((r, i) => { r.rotation.y += dt * (i % 2 ? -60 : 60); });
+    for (const h of this.hazards) {
+      if (!h.found && Math.hypot(h.x - this.drone.position.x, h.z - this.drone.position.z) < SENSOR_RANGE) this.detect(h);
+    }
+  }
+
+  private updateRadiation(dt: number): void {
+    let rad: number;
+    if (this.phase === "storm" || this.phase === "sheltered") {
+      this.stormT += dt * STORM_REPLAY;
+      const t0 = this.rad[this.onsetIdx].t;
+      const t = t0 + this.stormT;
+      let i = this.onsetIdx;
+      while (i < this.rad.length - 2 && this.rad[i + 1].t < t) i++;
+      const a = this.rad[i], b = this.rad[i + 1];
+      const f = Math.min(1, Math.max(0, (t - a.t) / Math.max(1, b.t - a.t)));
+      rad = a.e + (b.e - a.e) * f;
+    } else {
+      // Quiet days before the event, looped two samples a second for a live-looking readout.
+      const f = (this.realT * 0.5) % (this.onsetIdx - 1);
+      const i = Math.floor(f);
+      rad = this.rad[i].e + (this.rad[i + 1].e - this.rad[i].e) * (f - i);
+    }
+    this.doseRate = rad * this.world.skyAt(this.pos.x, this.pos.z);
+    this.peakRate = Math.max(this.peakRate, this.doseRate);
+    this.evaDose += (this.doseRate * dt * CLOCK_RATE) / 3600;
+    this.histAcc += dt;
+    if (this.histAcc > 0.5) {
+      this.histAcc = 0;
+      this.doseHistory.push(this.doseRate);
+      if (this.doseHistory.length > 90) this.doseHistory.shift();
+    }
+  }
+
+  private updateBody(dt: number): void {
+    const effort = Math.min(1, this.speed / SPRINT) + Math.min(0.5, this.world.slopeAt(this.pos.x, this.pos.z) / 40);
+    const target = 76 + effort * 62 + (this.phase === "storm" ? 16 : 0);
+    this.hr += (target - this.hr) * Math.min(1, dt * 0.5);
+    const hours = (dt * CLOCK_RATE) / 3600;
+    this.o2 = Math.max(0, this.o2 - hours * (100 / 8) * (0.8 + effort * 0.7));
+    this.battery = Math.max(0, this.battery - hours * (100 / 10));
+  }
+
+  private band(): Band {
+    const k = this.doseRate / this.baseline;
+    return k < 1.2 ? "green" : k < 1.5 ? "amber" : "red";
+  }
+
+  private advice(): string {
+    const found = this.hazards.filter((h) => h.found).length;
+    if (this.phase === "scout") return "Hold at base. Scout pass in progress.";
+    if (this.phase === "sheltered") return this.band() === "green" ? "Rate back under 1.2x baseline. Clear to return to base." : "Hold in shelter. Rate still elevated.";
+    if (this.phase === "storm") return "Abort EVA. Follow the red route to shelter.";
+    if (this.phase === "arrived") return "Science stop reached. Watch your oxygen margin.";
+    if ((found / Math.max(1, this.initialRouteLen)) * 100 > 1) return "High uncertainty: more than one change per 100 m. Leave this area.";
+    return found ? `Route updated around ${found} changes. Continue to the science stop.` : "Route clear. Continue to the science stop.";
+  }
+
+  private snapshot(): HudState {
+    const tgt = this.target();
+    const dx = tgt.x - this.pos.x, dz = tgt.z - this.pos.z;
+    const found = this.hazards.filter((h) => h.found).length;
+    const b = this.meta.bounds_lonlat;
+    const left = Math.max(0, pathLength(this.route) - progressAlong(this.route, { x: this.pos.x, z: this.pos.z }));
+    return {
+      view: this.view,
+      phase: this.phase,
+      heading: ((this.yaw * 180) / Math.PI + 3600) % 360,
+      objective: this.phase === "storm" || this.phase === "sheltered" ? (this.shelter?.label ?? "Shelter") : GOAL.label,
+      objectiveDist: Math.hypot(dx, dz),
+      objectiveBearing: ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360,
+      missionMin: (this.realT * CLOCK_RATE) / 60,
+      doseRate: this.doseRate,
+      baseline: this.baseline,
+      band: this.band(),
+      evaDose: this.evaDose,
+      peakRate: this.peakRate,
+      doseHistory: this.doseHistory,
+      etaShelterS: this.phase === "storm" ? left / SPRINT : null,
+      hr: this.hr,
+      spo2: 98,
+      o2: this.o2,
+      battery: this.battery,
+      suitKpa: 29.6,
+      speed: this.speed,
+      slope: this.world.slopeAt(this.pos.x, this.pos.z),
+      sky: this.world.skyAt(this.pos.x, this.pos.z),
+      elevation: this.world.elevation(this.pos.x, this.pos.z),
+      lon: b.west + ((this.pos.x + HALF) / SITE_M) * (b.east - b.west),
+      lat: b.north - ((this.pos.z + HALF) / SITE_M) * (b.north - b.south),
+      log: this.log.slice(-4),
+      hazardsFound: found,
+      hazardsTotal: this.hazards.length,
+      uncertainty: (found / Math.max(1, this.initialRouteLen)) * 100,
+      advice: this.advice(),
+      autopilot: this.autopilot,
+      locked: this.locked,
+      stormSource: this.stormSource,
+      routeLeft: left,
+    };
+  }
+
+  // --- rendering ------------------------------------------------------------
+
+  private render(dt: number): void {
+    const cam = this.camera;
+    const head = new THREE.Vector3(this.pos.x, this.pos.y + EYE, this.pos.z);
+    const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+    if (this.view === "fpv") {
+      const bob = Math.sin(this.walkPhase * 2) * 0.035 * Math.min(1, this.speed / WALK);
+      cam.position.copy(head).setY(head.y + bob);
+      cam.lookAt(head.clone().add(dir));
+      cam.fov = 74;
+    } else if (this.view === "tpv") {
+      const back = dir.clone().multiplyScalar(-6.2);
+      const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(this.yaw) * 0.9, 1.2, Math.sin(this.yaw) * 0.9));
+      want.y = Math.max(want.y, this.world.heightAt(want.x, want.z) + 0.6);
+      cam.position.lerp(want, Math.min(1, dt * 12));
+      cam.lookAt(head.clone().add(dir.clone().multiplyScalar(12)));
+      cam.fov = 62;
+    } else {
+      const want = new THREE.Vector3(this.pos.x - Math.sin(this.yaw) * this.mapZoom * 0.35, this.pos.y + this.mapZoom, this.pos.z + Math.cos(this.yaw) * this.mapZoom * 0.35);
+      cam.position.lerp(want, Math.min(1, dt * 5));
+      cam.lookAt(this.pos.x, this.pos.y, this.pos.z);
+      cam.fov = 50;
+    }
+    cam.updateProjectionMatrix();
+
+    if (this.routeLine) this.routeLine.visible = this.view === "map";
+    this.astronaut.visible = this.view !== "fpv";
+    this.astronaut.position.copy(this.pos);
+    this.astronaut.rotation.y = -this.yaw;
+    this.astronaut.scale.setScalar(this.view === "map" ? Math.max(1, this.mapZoom / 70) : 1);
+    const swing = Math.sin(this.walkPhase) * 0.75 * Math.min(1, this.speed / WALK);
+    this.limbs.forEach((l, i) => { l.rotation.x = (i % 2 ? -swing : swing) * (i < 2 ? 1 : -0.8); });
+    if (this.routeMesh) (this.routeMesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(this.realT * 4) * 0.25;
+    (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.realT * 3) * 0.07;
+
+    this.renderer.render(this.scene, cam);
+    this.placeMarkers();
+  }
+
+  private placeMarkers(): void {
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const v = new THREE.Vector3();
+    for (const mk of this.markers) {
+      v.copy(mk.pos);
+      const dist = v.distanceTo(this.camera.position);
+      v.project(this.camera);
+      const on = mk.show() && v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
+      mk.el.style.display = on ? "block" : "none";
+      if (!on) continue;
+      mk.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -100%)`;
+      mk.el.textContent = `${mk.text} · ${Math.round(dist)} m`;
+    }
+  }
+
+  private drawMinimap(): void {
+    const cv = this.minimap;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const s = cv.width, range = 260; // metres from centre to edge
+    const k = s / (range * 2);
+    ctx.save();
+    ctx.clearRect(0, 0, s, s);
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(s / 2, s / 2);
+    ctx.rotate(-this.yaw);
+    const pxPerM = this.ortho.width / SITE_M;
+    const sx = (this.pos.x + HALF - range * 1.5) * pxPerM, sz = (this.pos.z + HALF - range * 1.5) * pxPerM;
+    ctx.filter = "sepia(1) saturate(2.2) hue-rotate(-18deg) brightness(0.9)";
+    ctx.drawImage(this.ortho, sx, sz, range * 3 * pxPerM, range * 3 * pxPerM, -range * 1.5 * k, -range * 1.5 * k, range * 3 * k, range * 3 * k);
+    ctx.filter = "none";
+    const P = (x: number, z: number): [number, number] => [(x - this.pos.x) * k, (z - this.pos.z) * k];
+    const storm = this.phase === "storm" || this.phase === "sheltered";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = storm ? "#ff5a3c" : "#35e0c2";
+    ctx.beginPath();
+    this.route.forEach((p, i) => { const [x, y] = P(p.x, p.z); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.stroke();
+    for (const hz of this.hazards) {
+      if (!hz.found) continue;
+      const [x, y] = P(hz.x, hz.z);
+      ctx.strokeStyle = "#ff5a3c";
+      ctx.fillStyle = "#ff5a3c44";
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(4, hz.r * k), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    const dot = (x: number, z: number, color: string, r = 5) => { const [a, b] = P(x, z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill(); };
+    for (const sh of this.shelters) dot(sh.x, sh.z, sh === this.shelter ? "#ff5a3c" : "#f5d76e", sh === this.shelter ? 7 : 4);
+    dot(this.goal.x, this.goal.z, "#35e0c2", 6);
+    dot(this.drone.position.x, this.drone.position.z, "#ffffff", 3.5);
+    ctx.restore();
+    // player arrow, always pointing up (heading-up map)
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(s / 2, s / 2 - 9);
+    ctx.lineTo(s / 2 + 6, s / 2 + 7);
+    ctx.lineTo(s / 2, s / 2 + 3);
+    ctx.lineTo(s / 2 - 6, s / 2 + 7);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Runs the simulation forward without rendering. Used by automated checks. */
+  fastForward(seconds: number): HudState {
+    for (let t = 0; t < seconds; t += 0.05) this.step(0.05);
+    return this.snapshot();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.cleanup.forEach((f) => f());
+    for (const mk of this.markers) mk.el.remove();
+    this.renderer?.dispose();
+    this.renderer?.domElement.remove();
+  }
+}
+
+export const MAX_ROUTE_SLOPE = MAX_SLOPE_DEG;
