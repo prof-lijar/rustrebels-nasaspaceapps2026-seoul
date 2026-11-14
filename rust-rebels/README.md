@@ -56,7 +56,7 @@ Team identity and mission copy come from `../docs/rust-rebels-team-identity.md`.
 
 ## Marswalk game (`/app`)
 
-A first-person and third-person walk across the Jezero delta front on HiRISE terrain. SuperJar (the scout drone) flies the route first and flags obstacles that are not in the base map, then a solar storm forces a reroute to shelter.
+A first-person and third-person walk across the Jezero delta front on HiRISE terrain. SuperJar (the scout drone) flies the route first and flags obstacles that are not in the base map, then a solar storm forces a reroute to shelter. The rover follows the astronaut, takes orders by chat or map click, recharges the suit, and drives to meet the astronaut as shelter when the storm hits.
 
 | Key | Action |
 | --- | --- |
@@ -66,9 +66,14 @@ A first-person and third-person walk across the Jezero delta front on HiRISE ter
 | P | Auto-walk the route |
 | T | Trigger the solar storm now |
 | N | Sound on / off |
-| Enter or C | Talk to SuperJar ("come back", "check the shelter", "status", ...) |
-| G, or click the minimap | Expand the map; click a point to send SuperJar there |
+| Enter or C | Talk to SuperJar or the rover, whichever tab is open in the left panel |
+| G, or click the minimap | Expand the map; click a point to send SuperJar or the rover there |
 | B | Call SuperJar back |
+| Q | Remote control: SuperJar, then the rover, then back to you. The camera follows the one you drive |
+| F | Rover follow / park |
+| E | Beside the rover: plug in for oxygen and battery |
 | R | Restart the mission |
+
+The left panel has two tabs: SuperJar (the drone) and Rover. Quick orders, the chat box and map clicks go to the open tab. A message that starts with "rover" or "superjar" goes to that one whichever tab is open.
 
 The "Data" button in the game lists what is real NASA data, what we derived, and what is simulated.

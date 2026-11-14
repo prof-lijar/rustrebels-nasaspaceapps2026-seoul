@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { MarsEngine, type DroneMode, type HudState, type ViewMode } from "./engine";
+import { MarsEngine, type Crew, type DroneMode, type HudState, type RoverMode, type ViewMode } from "./engine";
 import "./game.css";
 
 const VIEWS: { id: ViewMode; key: string; label: string }[] = [
@@ -11,13 +11,25 @@ const VIEWS: { id: ViewMode; key: string; label: string }[] = [
   { id: "map", key: "3", label: "Mission map" },
 ];
 
-const DRONE_STATUS: Record<DroneMode, string> = { route: "ESCORT", recall: "WITH YOU", goto: "EN ROUTE", hold: "ON STATION" };
-const QUICK: { label: string; say: string }[] = [
-  { label: "Come back", say: "come back" },
-  { label: "Scout ahead", say: "scout ahead" },
-  { label: "Check shelter", say: "check the nearest shelter" },
-  { label: "Status", say: "status" },
-];
+const DRONE_STATUS: Record<DroneMode, string> = { route: "ESCORT", recall: "WITH YOU", goto: "EN ROUTE", hold: "ON STATION", manual: "REMOTE" };
+const ROVER_STATUS: Record<RoverMode, string> = { follow: "FOLLOWING", hold: "PARKED", goto: "DRIVING", rescue: "COMING TO YOU", manual: "REMOTE" };
+// Each crew member has its own orders. The chat box and the map send to whichever tab is open.
+const QUICK: Record<Crew, { label: string; say: string }[]> = {
+  superjar: [
+    { label: "Come back", say: "come back" },
+    { label: "Scout ahead", say: "scout ahead" },
+    { label: "Check shelter", say: "check the nearest shelter" },
+    { label: "Status", say: "status" },
+  ],
+  rover: [
+    { label: "Follow me", say: "follow" },
+    { label: "Park", say: "park" },
+    { label: "Come here", say: "come here" },
+    { label: "Go to base", say: "go to base" },
+    { label: "Status", say: "status" },
+  ],
+};
+const CREW_NAME: Record<Crew, string> = { superjar: "SuperJar", rover: "the rover" };
 
 const CARDINALS: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
 
@@ -83,6 +95,7 @@ export function MarsGame() {
   const [started, setStarted] = useState(false);
   const [info, setInfo] = useState(false);
   const [draft, setDraft] = useState("");
+  const [crew, setCrew] = useState<Crew>("superjar");
   const chat = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -109,7 +122,7 @@ export function MarsGame() {
   }, [started]);
 
   const send = (text: string) => {
-    engine.current?.command(text);
+    engine.current?.command(text, crew);
     setDraft("");
   };
 
@@ -148,13 +161,35 @@ export function MarsGame() {
         )}
 
         <section className="mg-panel mg-left">
-          <header><b>SUPERJAR</b><span>{hud?.phase === "scout" ? "SCOUTING" : DRONE_STATUS[hud?.droneMode ?? "route"]} · {Math.round(hud?.droneDist ?? 0)} m · {hud?.hazardsFound}/{hud?.hazardsTotal} changes<i className="mg-sim">SIM</i></span></header>
+          <div className="mg-crew" role="tablist" aria-label="Who you are talking to">
+            <button type="button" role="tab" aria-selected={crew === "superjar"} className={crew === "superjar" ? "mg-on" : ""} onClick={() => setCrew("superjar")}>
+              <b>SUPERJAR</b><i>drone</i>
+              <span>{hud?.phase === "scout" ? "SCOUTING" : DRONE_STATUS[hud?.droneMode ?? "route"]} · {Math.round(hud?.droneDist ?? 0)} m</span>
+            </button>
+            <button type="button" role="tab" aria-selected={crew === "rover"} className={`mg-crew-rover ${crew === "rover" ? "mg-on" : ""}`} onClick={() => setCrew("rover")}>
+              <b>ROVER</b><i>vehicle</i>
+              <span>{ROVER_STATUS[hud?.roverMode ?? "follow"]} · {Math.round(hud?.roverDist ?? 0)} m{hud?.docked && " · PLUGGED"}</span>
+            </button>
+          </div>
           <p className="mg-advice">{hud?.advice}</p>
+          <p className="mg-crew-note">{hud?.hazardsFound}/{hud?.hazardsTotal} changes found<i className="mg-sim">SIM</i></p>
           <ul className="mg-log">
-            {hud?.log.map((l) => <li key={`${l.t}-${l.text}`} className={l.who ? "mg-log-you" : `mg-log-${l.tone}`}>{l.who && <b>YOU › </b>}{l.text}</li>)}
+            {hud?.log.map((l) => (
+              <li key={`${l.t}-${l.text}`} className={l.who === "you" ? "mg-log-you" : `mg-log-${l.tone} ${l.who === "rover" ? "mg-log-rover" : ""}`}>
+                <b>{l.who === "you" ? `YOU → ${l.to === "rover" ? "ROVER" : "SUPERJAR"} › ` : l.who === "rover" ? "ROVER › " : "SUPERJAR › "}</b>{l.text}
+              </li>
+            ))}
           </ul>
-          <div className="mg-quick" role="group" aria-label="Quick orders for SuperJar">
-            {QUICK.map((q) => <button key={q.label} type="button" onClick={() => send(q.say)}>{q.label}</button>)}
+          <button type="button" className={`mg-remote ${hud?.control === crew ? "mg-on" : ""}`} aria-pressed={hud?.control === crew} disabled={storm} onClick={() => { engine.current?.setControl(hud?.control === crew ? "astronaut" : crew); engine.current?.requestLock(); }}>
+            {hud?.control === crew ? `Stop remote control of ${CREW_NAME[crew]}` : crew === "rover" ? "Drive the rover yourself" : "Fly SuperJar yourself"}<kbd>Q</kbd>
+          </button>
+          <div className="mg-quick" role="group" aria-label={`Quick orders for ${CREW_NAME[crew]}`}>
+            {QUICK[crew].map((q) => <button key={q.label} type="button" onClick={() => send(q.say)}>{q.label}</button>)}
+            {crew === "rover" && (
+              <button type="button" className={hud?.roverSound && hud?.sound ? "mg-on" : ""} aria-pressed={hud?.roverSound ?? true} disabled={!hud?.sound} title={hud?.sound ? undefined : "All sound is off (N)"} onClick={() => engine.current?.setRoverSound(!hud?.roverSound)}>
+                {hud?.roverSound && hud?.sound ? "Rover sound on" : "Rover sound off"}
+              </button>
+            )}
           </div>
           <form className="mg-chat" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
             <input
@@ -162,8 +197,8 @@ export function MarsGame() {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
-              placeholder="Talk to SuperJar (Enter)"
-              aria-label="Message to SuperJar"
+              placeholder={crew === "rover" ? "Order the rover (Enter)" : "Talk to SuperJar (Enter)"}
+              aria-label={`Message to ${CREW_NAME[crew]}`}
               maxLength={120}
               autoComplete="off"
             />
@@ -173,7 +208,14 @@ export function MarsGame() {
 
         <section className={`mg-panel mg-map ${hud?.mapExpanded ? "mg-map-wide" : ""}`}>
           {hud?.mapExpanded && (
-            <header><b>SEND SUPERJAR</b><span>Click a point · north up<button type="button" className="mg-map-close" onClick={() => engine.current?.setMapExpanded(false)}>Close <kbd>G</kbd></button></span></header>
+            <header>
+              <b className="mg-map-who" role="group" aria-label="Who to send">
+                SEND
+                <button type="button" className={crew === "superjar" ? "mg-on" : ""} aria-pressed={crew === "superjar"} onClick={() => setCrew("superjar")}>SuperJar</button>
+                <button type="button" className={crew === "rover" ? "mg-on" : ""} aria-pressed={crew === "rover"} onClick={() => setCrew("rover")}>Rover</button>
+              </b>
+              <span>Click a point · north up<button type="button" className="mg-map-close" onClick={() => engine.current?.setMapExpanded(false)}>Close <kbd>G</kbd></button></span>
+            </header>
           )}
           <canvas
             ref={minimap}
@@ -181,11 +223,11 @@ export function MarsGame() {
             height={hud?.mapExpanded ? 620 : 220}
             role="button"
             tabIndex={0}
-            aria-label={hud?.mapExpanded ? "Map. Click a point to send SuperJar there." : "Minimap. Click to expand."}
+            aria-label={hud?.mapExpanded ? `Map. Click a point to send ${crew === "rover" ? "the rover" : "SuperJar"} there.` : "Minimap. Click to expand."}
             onClick={(e) => {
               if (!hud?.mapExpanded) return engine.current?.setMapExpanded(true);
               const r = e.currentTarget.getBoundingClientRect();
-              engine.current?.mapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+              engine.current?.mapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, crew);
             }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") engine.current?.setMapExpanded(!hud?.mapExpanded); }}
           />
@@ -236,15 +278,25 @@ export function MarsGame() {
             <button type="button" onClick={() => engine.current?.resetMission()}><kbd>R</kbd>Restart</button>
             <button type="button" onClick={() => setInfo(true)}>Data</button>
           </div>
-          {!hud?.locked && !hud?.autopilot && hud?.view !== "map" && <p className="mg-hint">Click the scene to look around · WASD move · Shift run · Space jump · V switch view</p>}
+          {hud?.control === "rover" && <p className="mg-hint mg-hint-remote">REMOTE · ROVER — W S drive · A D steer · Shift fast · mouse looks · V switch view · Q hand back</p>}
+          {hud?.control === "superjar" && (
+            <p className="mg-hint mg-hint-remote">
+              <b>ALT {Math.round(hud.flightAlt)} m · {hud.flightSpeed.toFixed(0)} m/s · {hud.flightClimb > 0.3 ? "▲" : hud.flightClimb < -0.3 ? "▼" : "–"} {Math.abs(hud.flightClimb).toFixed(1)} m/s</b>
+              <br />PILOT · SUPERJAR — flies where you look · W forward · S back · A D slide · Space up · Shift down · V switch view · Q hand back
+            </p>
+          )}
+          {hud?.control === "astronaut" && !hud?.locked && !hud?.autopilot && hud?.view !== "map" && <p className="mg-hint">Click the scene to look around · WASD move · Shift run · Space jump · V switch view</p>}
         </div>
 
+        {hud?.canDock && hud.phase !== "scout" && (
+          <p className="mg-prompt"><kbd>E</kbd> {hud.docked ? "Unplug from the rover" : "Plug into the rover: oxygen and battery"}</p>
+        )}
         {hud?.view === "fpv" && <span className="mg-cross" aria-hidden="true" />}
       </div>
 
       {hud?.phase === "sheltered" && started && (
         <div className="mg-debrief">
-          <b>IN SHELTER</b>
+          <b>{hud.docked ? "SHELTERING AT THE ROVER" : "IN SHELTER"}</b>
           <p>EVA dose {hud.evaDose.toFixed(1)} µGy · peak {hud.peakRate.toFixed(1)} µGy/h · now {ratio.toFixed(2)}× baseline</p>
           <button type="button" onClick={() => engine.current?.resetMission()}>Run it again</button>
         </div>
@@ -267,7 +319,7 @@ export function MarsGame() {
           )}
           <ul className="mg-keys">
             <li><kbd>W A S D</kbd> move</li><li><kbd>Mouse</kbd> look</li><li><kbd>Shift</kbd> run</li><li><kbd>Space</kbd> jump</li>
-            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li><li><kbd>N</kbd> sound on / off</li><li><kbd>Enter</kbd> talk to SuperJar</li><li><kbd>G</kbd> map: send SuperJar</li><li><kbd>B</kbd> call SuperJar back</li>
+            <li><kbd>V</kbd> first / third person</li><li><kbd>M</kbd> mission map</li><li><kbd>P</kbd> auto-walk</li><li><kbd>T</kbd> solar storm</li><li><kbd>N</kbd> sound on / off</li><li><kbd>Enter</kbd> talk to SuperJar or the rover</li><li><kbd>G</kbd> map: send either one</li><li><kbd>B</kbd> call SuperJar back</li><li><kbd>Q</kbd> remote control: SuperJar, rover, you</li><li><kbd>F</kbd> rover follow / park</li><li><kbd>E</kbd> plug into the rover</li>
           </ul>
           <Link href="/" className="mg-back">← Back to the pitch</Link>
         </div>
@@ -279,13 +331,13 @@ export function MarsGame() {
             <b>What is real, what is simulated</b>
             <dl>
               <dt>Real NASA data</dt>
-              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Astronaut: NASA&apos;s Z2 planetary-surface prototype suit, from NASA 3D Resources. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, and the SuperCam laser (sol 12), played when SuperJar flags a hazard (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
+              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Astronaut: NASA&apos;s Z2 planetary-surface prototype suit, from NASA 3D Resources. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, the SuperCam laser (sol 12), played when SuperJar flags a hazard, and Perseverance driving (sol 16), played when the rover moves (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
               <dt>Derived by us</dt>
               <dd>Slope, route, sky fraction and shelter spots, all computed from the HiRISE elevation. Dose rate shown is RAD × sky fraction. That is a geometric estimate, not a dose calculation.</dd>
               <dt>Simulated</dt>
-              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections and its flight speed on orders; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
+              <dd>New boulders, sand and rockfall; SuperJar&apos;s detections and its flight speed on orders; the rover driving itself, following you and recharging your suit, remote control of the rover and SuperJar, its speed (about 100 times the real rover&apos;s), and the small bumps its suspension rides over, which the 4 m terrain cannot show; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>SuperJar&apos;s chat is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
+              <dd>The rover is shown as the storm shelter because the pitch says so; the game applies no dose reduction there, since we have no figure for it. The chat with SuperJar and the rover is rule-based: it reads answers from the mission state and has no language model behind it. RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. NASA&apos;s rover model is also static: we cut its wheel mesh into six wheels that spin and steer and split the suspension into two sides that rock; the smaller bogie joints do not move. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>
