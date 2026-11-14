@@ -65,13 +65,25 @@
 .mg-map-close { padding: 3px 8px; background: transparent; border: 1px solid #f4ede266; font-size: 10px; }
 .mg-map-close:hover { border-color: var(--mg-ink); }
 .mg-log-you { color: var(--mg-ink) !important; border-color: var(--mg-ink) !important; }
-.mg-rover { margin-top: 10px; padding-top: 8px; border-top: 1px solid #f4ede222; display: grid; gap: 6px; font-size: 10px; color: #c8c0b3; }
-.mg-rover b { color: #f38d5a; margin-right: 4px; }
-.mg-rover div { display: flex; flex-wrap: wrap; gap: 5px; }
-.mg-rover button, .mg-map-who button { padding: 4px 8px; background: #0008; border: 1px solid #f4ede244; font-size: 10px; }
-.mg-rover button:hover, .mg-map-who button:hover { border-color: var(--mg-ink); }
-.mg-rover .mg-on, .mg-map-who .mg-on { border-color: #f38d5a; color: #f38d5a; }
-.mg-rover button:focus-visible, .mg-map-who button:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
+.mg-crew { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.mg-crew button { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 6px; padding: 6px 8px; text-align: left; background: #0008; border: 1px solid #f4ede233; border-bottom-width: 3px; opacity: .6; }
+.mg-crew button b { color: var(--mg-c); }
+.mg-crew .mg-crew-rover b { color: #f38d5a; }
+.mg-crew button i { font-style: normal; font-size: 9px; color: #a59d90; }
+.mg-crew button span { grid-column: 1 / -1; font-size: 9px; color: #c8c0b3; }
+.mg-crew button:hover { opacity: 1; }
+.mg-crew .mg-on { opacity: 1; border-color: var(--mg-c); }
+.mg-crew .mg-crew-rover.mg-on { border-color: #f38d5a; }
+.mg-crew button:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
+.mg-crew-note { margin: -4px 0 8px; font-size: 9px; color: #a59d90; }
+.mg-log li b { color: var(--mg-c); font-weight: 700; }
+.mg-log .mg-log-rover { border-color: #f38d5a; }
+.mg-log .mg-log-rover b { color: #f38d5a; }
+.mg-log .mg-log-you b { color: inherit; }
+.mg-map-who button { padding: 4px 8px; background: #0008; border: 1px solid #f4ede244; font-size: 10px; }
+.mg-map-who button:hover { border-color: var(--mg-ink); }
+.mg-map-who .mg-on { border-color: #f38d5a; color: #f38d5a; }
+.mg-map-who button:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
 .mg-map-who { display: flex; align-items: center; gap: 6px; }
 .mg-prompt { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); margin: 0; padding: 8px 14px; background: #0e1413e6; border: 1px solid #f38d5a; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .mg-quick { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
@@ -158,3 +170,14 @@
   .mg-views kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .mg-storm .mg-visor { animation: none; } }
+
+.mg-quick .mg-on { border-color: #f38d5a; color: #f38d5a; }
+.mg-quick button:disabled { opacity: .45; cursor: default; }
+.mg-remote { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 10px; padding: 6px 8px; background: #0008; border: 1px solid #f4ede244; font-size: 10px; }
+.mg-remote:hover:not(:disabled) { border-color: var(--mg-ink); }
+.mg-remote.mg-on { border-color: var(--mg-c); color: var(--mg-c); }
+.mg-remote:disabled { opacity: .45; cursor: default; }
+.mg-remote:focus-visible { outline: 2px solid var(--mg-ink); outline-offset: 2px; }
+.mg-hint-remote { color: var(--mg-c); border: 1px solid var(--mg-c); }
+/* Short windows: show fewer log lines so the chat box stays clear of the suit panel. */
+@media (max-height: 760px) { .mg-left .mg-log li:nth-last-child(n+4) { display: none; } }

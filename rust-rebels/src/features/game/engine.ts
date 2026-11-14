@@ -22,6 +22,7 @@ const STORM_REPLAY = 600; // RAD seconds per real second during the storm
 const STORM_AT_PROGRESS = 0.3;
 const SCOUT_SPEED = 80;
 const SENSOR_RANGE = 70;
+const DRONE_MANUAL_SPEED = 14; // m/s when flown by hand
 const ROVER_SPEED = 4.5; // m/s. The real rover's top speed is about 0.04 m/s; this is game pace.
 const ROVER_RESCUE_SPEED = 7.5;
 const ROVER_FOLLOW_GAP = 11; // metres the rover keeps behind the astronaut
@@ -32,8 +33,23 @@ const MAP_RANGE_WIDE = 650; // metres from centre to edge of the expanded map
 
 export type ViewMode = "fpv" | "tpv" | "map";
 export type Band = "green" | "amber" | "red";
-export type RoverMode = "follow" | "hold" | "goto" | "rescue";
-export type DroneMode = "route" | "recall" | "goto" | "hold";
+/** Small ground relief, about 1.4 m across and up to 4.5 cm high or deep. Simulated. */
+function bump(x: number, z: number): number {
+  const s = 1.4, xi = Math.floor(x / s), zi = Math.floor(z / s);
+  const hash = (i: number, j: number) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
+  let fx = x / s - xi, fz = z / s - zi;
+  fx = fx * fx * (3 - 2 * fx);
+  fz = fz * fz * (3 - 2 * fz);
+  const top = hash(xi, zi) + (hash(xi + 1, zi) - hash(xi, zi)) * fx;
+  const bot = hash(xi, zi + 1) + (hash(xi + 1, zi + 1) - hash(xi, zi + 1)) * fx;
+  return (top + (bot - top) * fz - 0.5) * 0.09;
+}
+
+export type Crew = "superjar" | "rover";
+export type RoverMode = "follow" | "hold" | "goto" | "rescue" | "manual";
+export type DroneMode = "route" | "recall" | "goto" | "hold" | "manual";
+/** Who the keys and the camera belong to. */
+export type Control = "astronaut" | Crew;
 export type Phase = "scout" | "walk" | "storm" | "sheltered" | "arrived";
 
 export type HudState = {
@@ -62,7 +78,8 @@ export type HudState = {
   elevation: number;
   lon: number;
   lat: number;
-  log: { t: number; text: string; tone: "info" | "warn" | "alert"; who?: "you" }[];
+  /** who: the speaker (SuperJar when absent). to: who an astronaut message was addressed to. */
+  log: { t: number; text: string; tone: "info" | "warn" | "alert"; who?: "you" | "rover"; to?: Crew }[];
   droneMode: DroneMode;
   roverMode: RoverMode;
   roverDist: number;
@@ -77,6 +94,13 @@ export type HudState = {
   advice: string;
   autopilot: boolean;
   sound: boolean;
+  /** The rover's driving sound, switched on its own tab. The master switch still mutes it. */
+  roverSound: boolean;
+  control: Control;
+  /** While flying SuperJar by hand: height over the ground (m), speed (m/s) and climb rate (m/s). */
+  flightAlt: number;
+  flightSpeed: number;
+  flightClimb: number;
   locked: boolean;
   stormSource: string;
   routeLeft: number;
@@ -172,6 +196,15 @@ export class MarsEngine {
   private roverPathFor: Vec2 = { x: 1e9, z: 1e9 };
   private roverMoving = false;
   private roverArrived = true;
+  private roverV = 0; // forward speed, m/s
+  private roverW = 0; // turn rate, rad/s, positive to the right
+  private roverPivoting = false; // turning on the spot, as the real rover does
+  private roverPose: { y: number; pitch: number; roll: number } | null = null;
+  private wheelRadius = 0.22;
+  /** Six wheels cut out of the model at load time. x/z are in the rover's frame (front is -z). */
+  private wheels: { pivot: THREE.Group; spin: THREE.Group; x: number; z: number; steers: boolean; steer: number }[] = [];
+  /** Left and right suspension halves, each rocking about its own pivot. */
+  private rockers: { group: THREE.Group; side: number; z: number }[] = [];
   private docked = false;
   private roverSound?: HTMLAudioElement;
   private stormRouteAt = 0;
@@ -203,6 +236,17 @@ export class MarsEngine {
   private laserStop = 0;
   private audioCtx?: AudioContext;
   private soundOn = true;
+  private roverSoundOn = true;
+  // remote control: the astronaut stands still and drives the rover or flies SuperJar
+  private control: Control = "astronaut";
+  private rcYaw = 0;
+  private rcPitch = -0.1;
+  private droneAlt = 8; // metres above ground while flown by hand
+  private droneVel = new THREE.Vector3();
+  private droneTilt = 0; // nose down, radians
+  private droneBank = 0;
+  private droneYawPrev = 0;
+  private rcWarnAt = -10;
 
   constructor(
     private container: HTMLElement,
@@ -482,12 +526,20 @@ export class MarsEngine {
       const r = fit(rover.value.scene, 3.4);
       r.rotation.y = ROVER_MODEL_YAW;
       this.rover.add(r);
+      this.rigRover();
     } else {
       this.rover.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 3), new THREE.MeshStandardMaterial({ color: 0xd8d2c6 })));
     }
     this.scene.add(this.rover);
     if (heli.status === "fulfilled") {
-      heli.value.scene.traverse((o) => { if (/rotor/i.test(o.name)) this.rotors.push(o); });
+      // Only the two rotor assemblies turn. The legs' meshes carry "ROTOR_STOWED" in their names in
+      // NASA's file, so match the node names exactly.
+      heli.value.scene.traverse((o) => { if (/^rotors_\d+$/.test(o.name)) this.rotors.push(o); });
+      // A faint disc over each rotor stands in for blades too fast to see one by one.
+      const blur = new THREE.CircleGeometry(0.6, 40).rotateY(Math.PI / 2); // the rotor axis is the node's X
+      const blurMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+      for (const r of this.rotors) r.add(new THREE.Mesh(blur, blurMat));
+      this.cleanup.push(() => { blur.dispose(); blurMat.dispose(); });
       this.drone.add(fit(heli.value.scene, 2.6)); // drawn about twice life size so it reads at distance
     } else {
       this.drone.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
@@ -584,6 +636,12 @@ export class MarsEngine {
     this.roverPath = [];
     this.roverPathAt = -10;
     this.roverArrived = true;
+    this.roverV = 0;
+    this.roverW = 0;
+    this.roverPivoting = false;
+    this.roverPose = null;
+    this.control = "astronaut";
+    this.droneVel.set(0, 0, 0);
     this.docked = false;
     this.pos.set(this.base.x, this.world.heightAt(this.base.x, this.base.z), this.base.z);
     this.drone.position.set(this.base.x, this.pos.y + 3, this.base.z); // SuperJar launches from the rover base
@@ -599,9 +657,10 @@ export class MarsEngine {
     (this.beacon.material as THREE.MeshBasicMaterial).color.set(0x35e0c2);
 
     this.addMarker(() => new THREE.Vector3(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z) + 4, this.goal.z), "SCIENCE STOP", "mg-mk-goal", () => this.phase !== "storm" && this.phase !== "sheltered");
-    this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map");
-    this.addMarker(() => new THREE.Vector3(this.roverPos.x, this.world.heightAt(this.roverPos.x, this.roverPos.z) + 3.4, this.roverPos.z), "ROVER", "mg-mk-rover", () => this.view !== "map" && Math.hypot(this.roverPos.x - this.pos.x, this.roverPos.z - this.pos.z) > 9);
-    this.addMarker(() => new THREE.Vector3(this.droneTarget.x, this.world.heightAt(this.droneTarget.x, this.droneTarget.z) + 3, this.droneTarget.z), "SUPERJAR TARGET", "mg-mk-drone", () => this.droneMode === "goto" || this.droneMode === "hold");
+    this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map" && this.control !== "superjar");
+    this.addMarker(() => new THREE.Vector3(this.pos.x, this.pos.y + 2.5, this.pos.z), "YOU", "mg-mk-goal", () => this.control !== "astronaut" && this.view !== "map");
+    this.addMarker(() => new THREE.Vector3(this.roverPos.x, this.world.heightAt(this.roverPos.x, this.roverPos.z) + 3.4, this.roverPos.z), "ROVER", "mg-mk-rover", () => this.view !== "map" && this.control !== "rover" && Math.hypot(this.roverPos.x - this.pos.x, this.roverPos.z - this.pos.z) > 9);
+    this.addMarker(() => new THREE.Vector3(this.droneTarget.x, this.world.heightAt(this.droneTarget.x, this.droneTarget.z) + 3, this.droneTarget.z), "SUPERJAR TARGET", "mg-mk-drone", () => this.droneMode === "goto"); // only while it is still on its way
 
     this.say("SuperJar launching. Scouting the route before you step out.", "info");
     this.say(`Base map: HiRISE, ${Math.round(this.initialRouteLen)} m to the science stop.`, "info");
@@ -709,9 +768,14 @@ export class MarsEngine {
     return mk;
   }
 
-  private say(text: string, tone: "info" | "warn" | "alert", who?: "you"): void {
-    this.log.push({ t: this.realT + this.log.length * 1e-6, text, tone, who });
+  private say(text: string, tone: "info" | "warn" | "alert", who?: "you" | "rover", to?: Crew): void {
+    this.log.push({ t: this.realT + this.log.length * 1e-6, text, tone, who, to });
     if (this.log.length > 30) this.log.shift();
+  }
+
+  /** A line in the rover's own voice, so its replies are not mistaken for SuperJar's. */
+  private sayRover(text: string, tone: "info" | "warn" | "alert" = "info"): void {
+    this.say(text, tone, "rover");
   }
 
   private detect(h: Hazard): void {
@@ -730,6 +794,7 @@ export class MarsEngine {
   triggerStorm(): void {
     if (this.phase === "storm" || this.phase === "sheltered") return;
     this.phase = "storm";
+    this.setControl("astronaut"); // the astronaut has to run; remote driving ends
     this.stormT = 0;
     this.stormStartReal = this.realT;
     // Rover first: it is the shelter, and it drives to meet the astronaut. Terrain only if the rover is far.
@@ -775,13 +840,19 @@ export class MarsEngine {
       if (k === "KeyG") this.setMapExpanded(!this.mapExpanded);
       if (k === "KeyB") this.recallDrone();
       if (k === "KeyE") this.interact();
+      if (k === "KeyQ") this.setControl(this.control === "astronaut" ? "superjar" : this.control === "superjar" ? "rover" : "astronaut");
       if (k === "KeyF") this.orderRover(this.roverMode === "follow" ? "hold" : "follow");
-      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot) this.setAutopilot(false);
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(k) && this.autopilot && this.control === "astronaut") this.setAutopilot(false);
       if (k === "Space" || k.startsWith("Arrow")) e.preventDefault();
     };
     const up = (e: KeyboardEvent) => this.keys.delete(e.code);
     const move = (e: MouseEvent) => {
       if (!this.locked) return;
+      if (this.control !== "astronaut") {
+        this.rcYaw += e.movementX * 0.0022;
+        this.rcPitch = Math.max(-1.35, Math.min(1.0, this.rcPitch - e.movementY * 0.0022));
+        return;
+      }
       this.yaw += e.movementX * 0.0022;
       this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - e.movementY * 0.0022));
     };
@@ -839,6 +910,10 @@ export class MarsEngine {
     if (!this.soundOn) this.laser?.pause();
   }
 
+  setRoverSound(on: boolean): void {
+    this.roverSoundOn = on;
+  }
+
   setSound(on: boolean): void {
     this.soundOn = on;
     this.applySound();
@@ -877,7 +952,7 @@ export class MarsEngine {
     }
     if (this.roverSound) {
       const d = Math.hypot(this.roverPos.x - this.camera.position.x, this.roverPos.z - this.camera.position.z);
-      const want = this.roverMoving ? Math.max(0, Math.min(0.55, 0.55 * (1 - (d - 4) / 70))) : 0;
+      const want = this.roverMoving && this.roverSoundOn ? Math.max(0, Math.min(0.55, 0.55 * (1 - (d - 4) / 70))) : 0;
       this.roverSound.volume += (want - this.roverSound.volume) * 0.08;
     }
     if (this.laser && this.laserStop && this.realT > this.laserStop) {
@@ -887,6 +962,42 @@ export class MarsEngine {
   }
 
   setView(v: ViewMode): void { this.view = v; }
+
+  /**
+   * Hands the keys and the camera to the rover or to SuperJar, or back to the astronaut.
+   * The astronaut stays where they are while driving remotely.
+   */
+  setControl(who: Control): void {
+    if (who === this.control) return;
+    if (who === "superjar" && this.scoutBusy()) return;
+    // Park whatever was being driven.
+    if (this.control === "rover" && this.roverMode === "manual") this.roverMode = "hold";
+    if (this.control === "superjar" && this.droneMode === "manual") {
+      this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
+      this.droneMode = "hold";
+      this.droneArrived = true;
+    }
+    this.control = who;
+    this.keys.clear();
+    if (who === "rover") {
+      this.roverMode = "manual";
+      this.roverPath = [];
+      this.docked = false;
+      this.rcYaw = this.roverYaw;
+      this.rcPitch = -0.3;
+      this.sayRover("Remote control on. W S drive, A D steer, Shift fast. Q hands back.");
+    } else if (who === "superjar") {
+      this.droneMode = "manual";
+      this.droneVel.set(0, 0, 0);
+      this.droneAlt = Math.max(2, this.drone.position.y - this.world.heightAt(this.drone.position.x, this.drone.position.z));
+      this.rcYaw = Math.PI - this.drone.rotation.y;
+      this.droneYawPrev = this.rcYaw;
+      this.rcPitch = -0.15;
+      this.say("You have the stick. It flies where you look: look down and push W to dive, look up to climb. Space and Shift go straight up and down. Q hands back.", "info");
+    } else {
+      this.say("Control is back with you.", "info");
+    }
+  }
   setAutopilot(on: boolean): void { this.autopilot = on; }
 
   // --- simulation -----------------------------------------------------------
@@ -902,6 +1013,11 @@ export class MarsEngine {
 
   private step(dt: number): void {
     this.realT += dt;
+    // An order, or the storm, can take a vehicle out of manual; the view then returns to the astronaut.
+    if ((this.control === "rover" && this.roverMode !== "manual") || (this.control === "superjar" && this.droneMode !== "manual")) {
+      this.control = "astronaut";
+      this.keys.clear();
+    }
     this.movePlayer(dt);
     this.moveRover(dt);
     this.moveDrone(dt);
@@ -964,7 +1080,7 @@ export class MarsEngine {
       this.pitch += (-0.08 - this.pitch) * Math.min(1, dt * 2);
       fwd = 1;
       sprint = true; // auto-walk runs, so the whole story fits in about a minute
-    } else {
+    } else if (this.control === "astronaut") {
       const k = this.keys;
       fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
       strafe = (k.has("KeyD") ? 1 : 0) - (k.has("KeyA") ? 1 : 0);
@@ -1014,6 +1130,42 @@ export class MarsEngine {
   }
 
   private moveDrone(dt: number): void {
+    if (this.droneMode === "manual") {
+      // Flown like a helicopter: it goes where the nose points. Look down and push forward to dive,
+      // look up to climb. Space and Shift raise and lower it without changing heading.
+      const k = this.keys, p = this.drone.position;
+      const fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      const side = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
+      const lift = (k.has("Space") ? 1 : 0) - (k.has("ShiftLeft") || k.has("ShiftRight") ? 1 : 0);
+      const sin = Math.sin(this.rcYaw), cos = Math.cos(this.rcYaw), cp = Math.cos(this.rcPitch), sp = Math.sin(this.rcPitch);
+      const want = new THREE.Vector3(fwd * sin * cp + side * cos, fwd * sp + lift * 0.6, -fwd * cos * cp + side * sin);
+      if (want.lengthSq() > 1) want.normalize();
+      want.multiplyScalar(DRONE_MANUAL_SPEED);
+      const before = this.droneVel.clone();
+      this.droneVel.lerp(want, Math.min(1, dt * 1.8)); // it has momentum: it leans in, then drifts to a stop
+      const nx = p.x + this.droneVel.x * dt, nz = p.z + this.droneVel.z * dt;
+      if (this.world.inBounds(nx, nz, 20)) { p.x = nx; p.z = nz; } else { this.droneVel.x = 0; this.droneVel.z = 0; }
+      // Free height, held between a skid's clearance over the ground and a ceiling.
+      const ground = this.world.heightAt(p.x, p.z);
+      p.y += this.droneVel.y * dt;
+      if (p.y < ground + 1.3) { p.y = ground + 1.3; this.droneVel.y = Math.max(0, this.droneVel.y); }
+      if (p.y > ground + 120) { p.y = ground + 120; this.droneVel.y = Math.min(0, this.droneVel.y); }
+      this.droneAlt = p.y - ground;
+      // The airframe pitches nose-down to accelerate forward and banks into sideways motion and turns.
+      const acc = this.droneVel.clone().sub(before).divideScalar(Math.max(dt, 1e-4));
+      const vF = this.droneVel.x * sin - this.droneVel.z * cos, vS = this.droneVel.x * cos + this.droneVel.z * sin;
+      const aF = acc.x * sin - acc.z * cos;
+      const yawRate = (this.rcYaw - this.droneYawPrev) / Math.max(dt, 1e-4);
+      this.droneYawPrev = this.rcYaw;
+      const tilt = Math.max(-0.45, Math.min(0.45, aF * 0.03 + vF * 0.014 - this.rcPitch * 0.25));
+      const bank = Math.max(-0.5, Math.min(0.5, vS * 0.02 + yawRate * vF * 0.012));
+      const ease = Math.min(1, dt * 5);
+      this.droneTilt += (tilt - this.droneTilt) * ease;
+      this.droneBank += (bank - this.droneBank) * ease;
+      this.drone.rotation.set(this.droneTilt, Math.PI - this.rcYaw, this.droneBank, "YXZ");
+      this.droneUpkeep(dt);
+      return;
+    }
     const len = pathLength(this.route);
     let want: Vec2, alt: number, cap: number;
     if (this.droneMode === "route") {
@@ -1049,10 +1201,11 @@ export class MarsEngine {
     this.drone.position.y += (ty - this.drone.position.y) * Math.min(1, dt * 3);
     const mv = this.drone.position.clone().sub(prev);
     if (mv.x * mv.x + mv.z * mv.z > 1e-5) this.drone.rotation.y = Math.atan2(mv.x, mv.z);
-    this.rotors.forEach((r, i) => { r.rotation.y += dt * (i % 2 ? -60 : 60); });
-    for (const h of this.hazards) {
-      if (!h.found && Math.hypot(h.x - this.drone.position.x, h.z - this.drone.position.z) < SENSOR_RANGE) this.detect(h);
-    }
+    this.droneTilt *= 1 - Math.min(1, dt * 4);
+    this.droneBank *= 1 - Math.min(1, dt * 4);
+    this.drone.rotation.x = this.droneTilt;
+    this.drone.rotation.z = this.droneBank;
+    this.droneUpkeep(dt);
     if (!this.droneArrived && d < 2.5 && this.droneMode !== "route") {
       this.droneArrived = true;
       if (this.droneMode === "goto") {
@@ -1061,6 +1214,16 @@ export class MarsEngine {
       } else if (this.droneMode === "recall") {
         this.say("SuperJar is back with you.", "info");
       }
+    }
+  }
+
+  /** Rotors turn and the sensors look for changes, however the drone is being flown. */
+  private droneUpkeep(dt: number): void {
+    // Blades turn about the mast (each rotor node's own X axis). The lower rotor's node is flipped
+    // in the model, so the same turn on both makes them counter-rotate, as on Ingenuity.
+    for (const r of this.rotors) r.rotateX(dt * 38);
+    for (const h of this.hazards) {
+      if (!h.found && Math.hypot(h.x - this.drone.position.x, h.z - this.drone.position.z) < SENSOR_RANGE) this.detect(h);
     }
   }
 
@@ -1124,10 +1287,16 @@ export class MarsEngine {
    * Plain-language orders and questions. Rule-based: every answer is read from the
    * mission state, so SuperJar cannot invent a reading.
    */
-  command(input: string): void {
-    const text = input.trim();
+  command(input: string, to: Crew = "superjar"): void {
+    let text = input.trim();
     if (!text) return;
-    this.say(text, "info", "you");
+    // A message that opens with a name goes to that name, whichever tab it was typed in.
+    const addressed = text.match(/^(rover|superjar|super jar|drone|jar)\b[\s,:]*/i);
+    if (addressed) {
+      to = addressed[1].toLowerCase() === "rover" ? "rover" : "superjar";
+      text = text.slice(addressed[0].length).trim() || "status";
+    }
+    this.say(text, "info", "you", to);
     const q = text.toLowerCase();
     const has = (re: RegExp) => re.test(q);
     const here = { x: this.pos.x, z: this.pos.z };
@@ -1140,19 +1309,9 @@ export class MarsEngine {
       const lat = parseFloat(coords[1]), lon = parseFloat(coords[2]);
       const x = ((lon - b.west) / (b.east - b.west)) * SITE_M - HALF, z = ((b.north - lat) / (b.north - b.south)) * SITE_M - HALF;
       const name = `${lat.toFixed(4)}°N ${lon.toFixed(4)}°E`;
-      return has(/\brover\b/) ? this.sendRover(x, z, name) : this.sendDrone(x, z, name);
+      return to === "rover" ? this.sendRover(x, z, name) : this.sendDrone(x, z, name);
     }
-    if (has(/\brover\b/)) {
-      if (has(/\b(stop|hold|stay|park|wait)\b/)) return this.orderRover("hold");
-      if (has(/\b(come|here|to me|pick me|bring|fetch)\b/)) return this.orderRover("come");
-      if (has(/\b(follow|with me|tag along|escort)\b/)) return this.orderRover("follow");
-      const place = this.shelters.find((s) => s.id !== "ROVER" && q.includes(s.id.toLowerCase()));
-      if (place) return this.sendRover(place.x, place.z, place.label);
-      if (has(/science|goal|objective|scarp|delta/)) return this.sendRover(this.goal.x, this.goal.z, "the science stop");
-      if (has(/base|home/)) return this.sendRover(this.base.x + 9, this.base.z - 6, "the base");
-      const state = { follow: "following you", hold: "parked", goto: "driving to a marked point", rescue: "driving to you as shelter" }[this.roverMode];
-      return this.say(`Rover is ${Math.round(this.roverDist())} m from you, ${state}. Say "rover come here", "rover follow", "rover stop", or press E beside it to plug in.`, "info");
-    }
+    if (to === "rover") return this.commandRover(q);
     if (has(/\b(come back|comeback|return|recall|to me|come here|back to me|call back)\b/)) return this.recallDrone();
     if (has(/\b(escort|follow|resume|lead|scout ahead|go ahead|carry on)\b/)) return this.escortDrone();
     if (has(/\b(stop|hold|stay|hover|wait)\b/)) {
@@ -1168,7 +1327,8 @@ export class MarsEngine {
       const s = [...this.shelters].sort((a, b) => dist(a) - dist(b))[0];
       return this.sendDrone(s.x, s.z, s.label);
     }
-    if (order && has(/rover|base/)) return this.sendDrone(this.base.x, this.base.z, "the rover base");
+    if (order && has(/rover/)) return this.sendDrone(this.roverPos.x, this.roverPos.z, "the rover");
+    if (order && has(/base|home/)) return this.sendDrone(this.base.x, this.base.z, "the base");
     if (order && has(/science|goal|objective|scarp|delta/)) return this.sendDrone(this.goal.x, this.goal.z, "the science stop");
 
     if (has(/shelter/)) {
@@ -1200,7 +1360,23 @@ export class MarsEngine {
     if (has(/status|report|sitrep|summary|how are we|ok\?/)) {
       return this.say(`${this.advice()} Dose rate ${(this.doseRate / this.baseline).toFixed(2)}x baseline, EVA dose ${this.evaDose.toFixed(1)} µGy, oxygen ${Math.round(this.o2)}%.`, "info");
     }
-    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". For the rover: "rover come here", "rover follow", "rover stop". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point.', "info");
+    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point. Driving orders go to the rover: switch to its tab.', "info");
+  }
+
+  /** Orders for the rover. It only drives, parks and recharges the suit; questions go to SuperJar. */
+  private commandRover(q: string): void {
+    const has = (re: RegExp) => re.test(q);
+    if (has(/\b(unplug|plug|recharge|charge|dock|refill)\b/)) return this.interact();
+    if (has(/\b(stop|hold|stay|park|wait|halt)\b/)) return this.orderRover("hold");
+    if (has(/\b(come|here|to me|pick me|bring|fetch|back)\b/)) return this.orderRover("come");
+    if (has(/\b(follow|with me|tag along|escort|resume)\b/)) return this.orderRover("follow");
+    const place = this.shelters.find((s) => s.id !== "ROVER" && q.includes(s.id.toLowerCase()));
+    if (place) return this.sendRover(place.x, place.z, place.label);
+    if (has(/science|goal|objective|scarp|delta/)) return this.sendRover(this.goal.x, this.goal.z, "the science stop");
+    if (has(/base|home/)) return this.sendRover(this.base.x + 9, this.base.z - 6, "the base");
+    const state = { follow: "following you", hold: "parked", goto: "driving to a marked point", rescue: "driving to you as shelter", manual: "under your remote control" }[this.roverMode];
+    if (has(/status|report|where|how far|distance/)) return this.sayRover(`${Math.round(this.roverDist())} m from you, ${state}${this.docked ? ", suit plugged in" : ""}.`);
+    this.sayRover(`I take driving orders only: "follow", "park", "come here", "go to base", "go to the science stop", "go to S07", coordinates, or "plug in" when you are beside me. Now ${state}, ${Math.round(this.roverDist())} m from you. Ask SuperJar about radiation, hazards and the route.`);
   }
 
   // --- map ------------------------------------------------------------------
@@ -1211,7 +1387,7 @@ export class MarsEngine {
   }
 
   /** Converts a click on the expanded (north-up) map into a SuperJar order. */
-  mapClick(fx: number, fy: number, who: "superjar" | "rover" = "superjar"): void {
+  mapClick(fx: number, fy: number, who: Crew = "superjar"): void {
     if (!this.mapExpanded) return;
     const range = MAP_RANGE_WIDE;
     const x = this.pos.x + (fx - 0.5) * range * 2, z = this.pos.z + (fy - 0.5) * range * 2;
@@ -1257,7 +1433,7 @@ export class MarsEngine {
     if (this.docked) {
       if (this.roverDist() > DOCK_RANGE + 1.5) {
         this.docked = false;
-        this.say("Unplugged from the rover.", "info");
+        this.sayRover("Suit unplugged.");
       } else {
         this.o2 = Math.min(100, this.o2 + dt * 5);
         this.battery = Math.min(100, this.battery + dt * 5);
@@ -1290,8 +1466,9 @@ export class MarsEngine {
     } else if (this.roverMode === "goto") {
       goal = this.roverGoal;
     }
-    let moved = 0;
-    if (goal && Math.hypot(goal.x - this.roverPos.x, goal.z - this.roverPos.z) > stopAt) {
+    let wantV = 0, wantW = 0;
+    const left = goal ? Math.hypot(goal.x - this.roverPos.x, goal.z - this.roverPos.z) - stopAt : 0;
+    if (goal && left > 0) {
       const drift = Math.hypot(goal.x - this.roverPathFor.x, goal.z - this.roverPathFor.z);
       if (!this.roverPath.length || (drift > 10 && this.realT - this.roverPathAt > 1.5)) {
         this.roverPath = solveRoute(this.world, this.roverPos, goal, this.blockers()) ?? [];
@@ -1299,27 +1476,31 @@ export class MarsEngine {
         this.roverPathFor = { ...goal };
         if (!this.roverPath.length && this.roverMode === "goto") {
           this.roverMode = "hold";
-          this.say("Rover: no drivable route to that point under 25°. Holding.", "warn");
+          this.sayRover("No drivable route to that point under 25°. Holding.", "warn");
         }
       }
       if (this.roverPath.length) {
         const along = progressAlong(this.roverPath, this.roverPos);
         const aim = pointAlong(this.roverPath, along + 3.5);
         const dx = aim.x - this.roverPos.x, dz = aim.z - this.roverPos.z;
-        const d = Math.hypot(dx, dz);
-        if (d > 0.05) {
-          const want = Math.atan2(dx, -dz);
-          let turn = want - this.roverYaw;
+        if (Math.hypot(dx, dz) > 0.05) {
+          let turn = Math.atan2(dx, -dz) - this.roverYaw;
           while (turn > Math.PI) turn -= Math.PI * 2;
           while (turn < -Math.PI) turn += Math.PI * 2;
-          this.roverYaw += turn * Math.min(1, dt * 2.5);
-          // Slow down while turning hard, like a six-wheeled rover would.
-          // Falling well behind in follow mode, it speeds up to catch the astronaut.
-          const base = this.roverMode === "rescue" || (this.roverMode === "follow" && dPlayer > 28) ? ROVER_RESCUE_SPEED : ROVER_SPEED;
-          const v = base * Math.max(0.25, 1 - Math.abs(turn) / 1.6);
-          moved = Math.min(d, v * dt);
-          this.roverPos.x += Math.sin(this.roverYaw) * moved;
-          this.roverPos.z -= Math.cos(this.roverYaw) * moved;
+          // Facing well away from the route: stop and turn on the spot, as the real rover does.
+          if (Math.abs(turn) > 1.0 && Math.abs(this.roverV) < 1) this.roverPivoting = true;
+          else if (Math.abs(turn) < 0.2) this.roverPivoting = false;
+          if (this.roverPivoting) {
+            wantW = Math.sign(turn) * Math.min(0.9, Math.abs(turn) * 3);
+          } else {
+            // Falling well behind in follow mode, it speeds up to catch the astronaut.
+            const base = this.roverMode === "rescue" || (this.roverMode === "follow" && dPlayer > 28) ? ROVER_RESCUE_SPEED : ROVER_SPEED;
+            // Slow for corners, and brake in time to stop at the goal.
+            wantV = Math.min(base * Math.max(0.25, 1 - Math.abs(turn) / 1.6), Math.sqrt(8 * left) + 0.4);
+            // An arc no tighter than about 1.8 m, which the steered corner wheels can follow.
+            const maxW = Math.max(0.15, Math.abs(this.roverV) / 1.8);
+            wantW = Math.max(-maxW, Math.min(maxW, turn * 2));
+          }
         }
         this.roverArrived = false;
       }
@@ -1327,62 +1508,254 @@ export class MarsEngine {
       this.roverArrived = true;
       this.roverMode = "hold";
       this.roverPath = [];
-      this.say(`Rover parked. ${Math.round(dPlayer)} m from you.`, "info");
+      this.sayRover(`Parked, ${Math.round(dPlayer)} m from you.`);
     } else {
       this.roverPath = [];
     }
-    this.roverMoving = moved > 1e-4;
+    if (this.roverMode === "manual") {
+      const k = this.keys;
+      const drive = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      const steer = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
+      wantV = drive > 0 ? (k.has("ShiftLeft") || k.has("ShiftRight") ? ROVER_RESCUE_SPEED : ROVER_SPEED) : drive < 0 ? -2.5 : 0;
+      // Steering reverses with the direction of travel, as in any vehicle; standing still it turns on the spot.
+      wantW = steer * 0.85 * (this.roverV < -0.2 ? -1 : 1);
+      // The rover will not drive onto ground over its slope limit, or off the mapped site.
+      const way = Math.sign(wantV || this.roverV);
+      if (way) {
+        const ax = this.roverPos.x + Math.sin(this.roverYaw) * way * 2.4, az = this.roverPos.z - Math.cos(this.roverYaw) * way * 2.4;
+        const steep = this.world.slopeAt(ax, az) > MAX_SLOPE_DEG;
+        if (steep || !this.world.inBounds(ax, az, 20)) {
+          wantV = 0;
+          this.roverV = 0;
+          if (this.realT - this.rcWarnAt > 4) {
+            this.rcWarnAt = this.realT;
+            this.sayRover(steep ? `Stopped: ${this.world.slopeAt(ax, az).toFixed(0)}° slope ahead, over my ${MAX_SLOPE_DEG}° limit.` : "Stopped: edge of the mapped site.", "warn");
+          }
+        }
+      }
+    }
+    if (!wantW) this.roverPivoting = false;
+    // The rover has mass: it picks up speed, brakes and swings into turns over time.
+    this.roverV += Math.max(-6 * dt, Math.min(3 * dt, wantV - this.roverV));
+    this.roverW += Math.max(-4 * dt, Math.min(4 * dt, wantW - this.roverW));
+    if (!wantV && Math.abs(this.roverV) < 0.02) this.roverV = 0;
+    if (!wantW && Math.abs(this.roverW) < 0.02) this.roverW = 0;
+    this.roverYaw += this.roverW * dt;
+    if (this.control === "rover") this.rcYaw += this.roverW * dt; // the camera turns with the rover
+    this.roverPos.x += Math.sin(this.roverYaw) * this.roverV * dt;
+    this.roverPos.z -= Math.cos(this.roverYaw) * this.roverV * dt;
+    this.roverMoving = Math.abs(this.roverV) > 0.05 || Math.abs(this.roverW) > 0.05;
     this.syncRoverShelter();
+    this.poseRover(dt);
+  }
 
-    // Sit the rover on the ground and tilt it to the slope under its wheels.
+  /** Sits the rover on the ground, turns and steers its wheels, and lets each side's suspension rock. */
+  private poseRover(dt: number): void {
     const { x, z } = this.roverPos;
-    const y = this.world.heightAt(x, z);
     const sin = Math.sin(this.roverYaw), cos = Math.cos(this.roverYaw);
-    const pitch = Math.atan2(this.world.heightAt(x + sin * 1.3, z - cos * 1.3) - this.world.heightAt(x - sin * 1.3, z + cos * 1.3), 2.6);
-    const roll = Math.atan2(this.world.heightAt(x + cos * 1.2, z + sin * 1.2) - this.world.heightAt(x - cos * 1.2, z - sin * 1.2), 2.4);
-    this.rover.position.set(x, y, z);
-    this.rover.rotation.set(pitch, -this.roverYaw, -roll, "YXZ");
+    // Ground under a point given in the rover's frame. The elevation model has 4 m cells, so small
+    // bumps are added to stand in for the stones and ripples it cannot show.
+    const ground = (lx: number, lz: number) => {
+      const wx = x + cos * lx - sin * lz, wz = z + sin * lx + cos * lz;
+      return this.world.heightAt(wx, wz) + bump(wx, wz);
+    };
+    let y: number, pitch: number, roll: number;
+    const sidePitch = [0, 0];
+    if (this.wheels.length === 6) {
+      // Each side settles on its own three wheels. The body takes the average of the two sides,
+      // which is what the differential on a rocker-bogie rover does.
+      let sum = 0;
+      const mean = [0, 0];
+      for (let s = 0; s < 2; s++) {
+        const ws = this.wheels.filter((w) => (w.x > 0 ? 1 : 0) === s).sort((a, b) => a.z - b.z);
+        const h = ws.map((w) => ground(w.x, w.z));
+        sidePitch[s] = Math.atan2(h[0] - h[2], ws[2].z - ws[0].z);
+        mean[s] = (h[0] + h[1] + h[2]) / 3;
+        sum += mean[s];
+      }
+      const zMid = this.rockers[0].z;
+      pitch = (sidePitch[0] + sidePitch[1]) / 2;
+      roll = Math.atan2(mean[1] - mean[0], Math.abs(this.rockers[1].group.position.x - this.rockers[0].group.position.x));
+      y = sum / 2 + Math.tan(pitch) * zMid;
+    } else {
+      y = this.world.heightAt(x, z);
+      pitch = Math.atan2(ground(0, -1.3) - ground(0, 1.3), 2.6);
+      roll = Math.atan2(ground(1.2, 0) - ground(-1.2, 0), 2.4);
+    }
+    const p = this.roverPose ?? (this.roverPose = { y, pitch, roll });
+    const k = Math.min(1, dt * 9);
+    p.y += (y - p.y) * k;
+    p.pitch += (pitch - p.pitch) * k;
+    p.roll += (roll - p.roll) * k;
+    this.rover.position.set(x, p.y, z);
+    this.rover.rotation.set(p.pitch, -this.roverYaw, -p.roll, "YXZ");
+    for (const r of this.rockers) {
+      const want = sidePitch[r.side > 0 ? 1 : 0] - p.pitch;
+      r.group.rotation.x += (want - r.group.rotation.x) * k;
+    }
+
+    // Each wheel rolls at the speed of the ground passing under it, so the outer wheels turn faster
+    // in a corner and the two sides counter-rotate in a turn on the spot. Corner wheels steer.
+    for (const w of this.wheels) {
+      const vf = this.roverV - this.roverW * w.x; // forward
+      const vr = -this.roverW * w.z; // to the right
+      let roll = vf;
+      if (w.steers) {
+        const speed = Math.hypot(vf, vr);
+        let want = speed > 0.03 ? Math.atan2(-vr, vf) : this.roverMoving ? w.steer : 0;
+        let dir = 1;
+        if (want > Math.PI / 2) { want -= Math.PI; dir = -1; }
+        else if (want < -Math.PI / 2) { want += Math.PI; dir = -1; }
+        w.steer += Math.max(-2.5 * dt, Math.min(2.5 * dt, want - w.steer));
+        w.pivot.rotation.y = w.steer;
+        roll = speed * dir;
+      }
+      w.spin.rotation.x -= (roll * dt) / this.wheelRadius;
+    }
+  }
+
+  /**
+   * NASA's rover model is static: all six wheels are one mesh and the suspension another.
+   * This cuts the wheels apart so each can spin and steer, and splits the suspension into a left
+   * and a right half that rock separately. Geometry is regrouped, not altered.
+   */
+  private rigRover(): void {
+    this.rover.updateMatrixWorld(true);
+    const toRover = this.rover.matrixWorld.clone().invert();
+    const wheelNode = this.rover.getObjectByName("Wheels_objs");
+    const suspNode = this.rover.getObjectByName("suspension");
+    if (!wheelNode || !suspNode) return;
+
+    type Part = { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] };
+    /** Sorts every triangle of a node into buckets by where its centre lies in the rover's frame. */
+    const split = (node: THREE.Object3D, bucketOf: (x: number, y: number, z: number) => string): Map<string, Part[]> => {
+      const out = new Map<string, Part[]>();
+      node.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        g.applyMatrix4(m.matrixWorld.clone().premultiply(toRover));
+        const pos = g.getAttribute("position");
+        const tris = new Map<string, number[]>();
+        for (let t = 0; t < pos.count; t += 3) {
+          const key = bucketOf(
+            (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3,
+            (pos.getY(t) + pos.getY(t + 1) + pos.getY(t + 2)) / 3,
+            (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3,
+          );
+          let list = tris.get(key);
+          if (!list) tris.set(key, (list = []));
+          list.push(t);
+        }
+        for (const [key, list] of tris) {
+          const geo = new THREE.BufferGeometry();
+          for (const name of Object.keys(g.attributes)) {
+            const src = g.getAttribute(name) as THREE.BufferAttribute;
+            const n = src.itemSize;
+            const dst = new THREE.BufferAttribute(new (src.array.constructor as new (len: number) => THREE.TypedArray)(list.length * 3 * n), n, src.normalized);
+            list.forEach((t, i) => {
+              for (let v = 0; v < 3; v++) for (let c = 0; c < n; c++) dst.setComponent(i * 3 + v, c, src.getComponent(t + v, c));
+            });
+            geo.setAttribute(name, dst);
+          }
+          let parts = out.get(key);
+          if (!parts) out.set(key, (parts = []));
+          parts.push({ geo, mat: m.material });
+        }
+        g.dispose();
+      });
+      return out;
+    };
+    const addParts = (to: THREE.Object3D, parts: Part[], shift: THREE.Vector3) => {
+      for (const part of parts) {
+        part.geo.translate(-shift.x, -shift.y, -shift.z);
+        to.add(new THREE.Mesh(part.geo, part.mat));
+        this.cleanup.push(() => part.geo.dispose());
+      }
+    };
+
+    // Measured on the model in the rover's frame: wheel rows sit at about z = -0.6, 0.4 and 1.2.
+    const wheelParts = split(wheelNode, (x, _y, z) => `${x < 0 ? "L" : "R"}${z < -0.1 ? 0 : z < 0.8 ? 1 : 2}`);
+    if (wheelParts.size !== 6) return; // not the model we measured; leave it in one piece
+    const boxes = new Map<string, THREE.Box3>();
+    for (const [key, parts] of wheelParts) {
+      const box = new THREE.Box3();
+      for (const part of parts) { part.geo.computeBoundingBox(); box.union(part.geo.boundingBox!); }
+      boxes.set(key, box);
+    }
+    const zMid = [...boxes.values()].reduce((a, b) => a + (b.min.z + b.max.z) / 2, 0) / 6;
+    // The differential bar across the middle stays with the body; the rest goes with its side.
+    const suspParts = split(suspNode, (x) => (Math.abs(x) < 0.3 ? "M" : x < 0 ? "L" : "R"));
+    addParts(this.rover, suspParts.get("M") ?? [], new THREE.Vector3());
+
+    let radius = 0;
+    for (const side of [-1, 1]) {
+      const tag = side < 0 ? "L" : "R";
+      const origin = new THREE.Vector3(side * 0.65, 0.7, zMid); // where the rocker meets the body
+      const rocker = new THREE.Group();
+      rocker.position.copy(origin);
+      addParts(rocker, suspParts.get(tag) ?? [], origin);
+      for (let row = 0; row < 3; row++) {
+        const box = boxes.get(tag + row)!;
+        const r = (box.max.z - box.min.z) / 2;
+        radius += r / 6;
+        const axle = new THREE.Vector3((box.min.x + box.max.x) / 2, box.min.y + r, (box.min.z + box.max.z) / 2);
+        const pivot = new THREE.Group(), spin = new THREE.Group();
+        pivot.position.copy(axle).sub(origin);
+        pivot.add(spin);
+        addParts(spin, wheelParts.get(tag + row)!, axle);
+        rocker.add(pivot);
+        this.wheels.push({ pivot, spin, x: axle.x, z: axle.z, steers: row !== 1, steer: 0 });
+      }
+      this.rover.add(rocker);
+      this.rockers.push({ group: rocker, side, z: zMid });
+    }
+    this.wheelRadius = radius;
+    for (const node of [wheelNode, suspNode]) {
+      node.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      node.removeFromParent();
+    }
   }
 
   /** E key: plug into the rover for oxygen and battery, or unplug. */
   interact(): void {
     if (this.docked) {
       this.docked = false;
-      return this.say("Unplugged from the rover.", "info");
+      return this.sayRover("Suit unplugged.");
     }
-    if (this.roverDist() > DOCK_RANGE) return this.say(`The rover is ${Math.round(this.roverDist())} m away. Get within ${Math.round(DOCK_RANGE)} m to plug in, or say "rover come here".`, "info");
+    if (this.roverDist() > DOCK_RANGE) return this.sayRover(`I am ${Math.round(this.roverDist())} m away. Get within ${Math.round(DOCK_RANGE)} m to plug in, or order me to come here.`, "info");
     this.docked = true;
     if (this.roverMode !== "rescue") this.roverMode = "hold";
-    this.say("Plugged into the rover. Recharging oxygen and battery.", "info");
+    this.sayRover("Suit plugged in. Recharging oxygen and battery.");
   }
 
   orderRover(mode: "follow" | "hold" | "come"): void {
     this.docked = false;
     if (mode === "hold") {
       this.roverMode = "hold";
-      return this.say("Rover holding here.", "info");
+      return this.sayRover("Parked here.");
     }
     if (mode === "come") {
       this.roverGoal = { x: this.pos.x + Math.sin(this.yaw) * 4, z: this.pos.z - Math.cos(this.yaw) * 4 };
       this.roverMode = "goto";
       this.roverArrived = false;
       this.roverPath = [];
-      return this.say(`Rover driving to you, ${Math.round(this.roverDist())} m. About ${Math.ceil(this.roverDist() / ROVER_SPEED)} s.`, "info");
+      return this.sayRover(`Driving to you, ${Math.round(this.roverDist())} m. About ${Math.ceil(this.roverDist() / ROVER_SPEED)} s.`, "info");
     }
     this.roverMode = "follow";
-    this.say(`Rover following, ${ROVER_FOLLOW_GAP} m behind you.`, "info");
+    this.sayRover(`Following, ${ROVER_FOLLOW_GAP} m behind you.`);
   }
 
   sendRover(x: number, z: number, label?: string): void {
-    if (!this.world.inBounds(x, z, 20)) return this.say("That point is outside the mapped site.", "warn");
-    if (this.world.slopeAt(x, z) > MAX_SLOPE_DEG) return this.say(`Rover: that point is on a ${this.world.slopeAt(x, z).toFixed(0)}° slope, too steep to park on.`, "warn");
+    if (!this.world.inBounds(x, z, 20)) return this.sayRover("That point is outside the mapped site.", "warn");
+    if (this.world.slopeAt(x, z) > MAX_SLOPE_DEG) return this.sayRover(`That point is on a ${this.world.slopeAt(x, z).toFixed(0)}° slope, too steep to park on.`, "warn");
     this.docked = false;
     this.roverGoal = { x, z };
     this.roverMode = "goto";
     this.roverArrived = false;
     this.roverPath = [];
     const d = Math.hypot(x - this.roverPos.x, z - this.roverPos.z);
-    this.say(`Rover driving to ${label ?? "the marked point"}, ${Math.round(d)} m in a straight line.`, "info");
+    this.sayRover(`Driving to ${label ?? "the marked point"}, ${Math.round(d)} m in a straight line.`, "info");
   }
 
   private band(): Band {
@@ -1439,6 +1812,11 @@ export class MarsEngine {
       advice: this.advice(),
       autopilot: this.autopilot,
       sound: this.soundOn,
+      roverSound: this.roverSoundOn,
+      control: this.control,
+      flightAlt: this.droneAlt,
+      flightSpeed: this.droneVel.length(),
+      flightClimb: this.droneVel.y,
       droneMode: this.droneMode,
       roverMode: this.roverMode,
       roverDist: this.roverDist(),
@@ -1457,30 +1835,39 @@ export class MarsEngine {
 
   private render(dt: number): void {
     const cam = this.camera;
-    const head = new THREE.Vector3(this.pos.x, this.pos.y + EYE, this.pos.z);
-    const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+    // The camera follows whoever has the controls: the astronaut, the rover's mast, or SuperJar.
+    const remote = this.control !== "astronaut";
+    const yaw = remote ? this.rcYaw : this.yaw, pitch = remote ? this.rcPitch : this.pitch;
+    const focus = this.control === "rover" ? this.rover.position : this.control === "superjar" ? this.drone.position : this.pos;
+    const eye = this.control === "rover" ? 2.7 : this.control === "superjar" ? -0.45 : EYE;
+    const chase = this.control === "rover" ? 7.5 : this.control === "superjar" ? 6 : 4.4; // third-person distance
+    const head = new THREE.Vector3(focus.x, focus.y + eye, focus.z);
+    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     if (this.view === "fpv") {
-      const bob = Math.sin(this.walkPhase * 2) * 0.035 * Math.min(1, this.speed / WALK);
+      const bob = remote ? 0 : Math.sin(this.walkPhase * 2) * 0.035 * Math.min(1, this.speed / WALK);
       cam.position.copy(head).setY(head.y + bob);
       cam.lookAt(head.clone().add(dir));
-      cam.fov = 74;
+      if (this.control === "superjar") cam.rotateZ(this.droneBank * 0.6); // the horizon tilts as the pilot banks
+      cam.fov = this.control === "superjar" ? 82 : 74;
     } else if (this.view === "tpv") {
-      const back = dir.clone().multiplyScalar(-4.4);
-      const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(this.yaw) * 0.75, 0.75, Math.sin(this.yaw) * 0.75));
+      const back = dir.clone().multiplyScalar(-chase);
+      const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(yaw) * 0.75, remote ? 1.4 : 0.75, Math.sin(yaw) * 0.75));
       want.y = Math.max(want.y, this.world.heightAt(want.x, want.z) + 0.6);
       cam.position.lerp(want, Math.min(1, dt * 12));
-      cam.lookAt(head.clone().add(dir.clone().multiplyScalar(12)));
+      // Driving remotely, aim nearer the vehicle so it sits mid-screen, clear of the panels.
+      cam.lookAt(head.clone().add(dir.clone().multiplyScalar(remote ? 3 : 12)));
       cam.fov = 62;
     } else {
-      const want = new THREE.Vector3(this.pos.x - Math.sin(this.yaw) * this.mapZoom * 0.35, this.pos.y + this.mapZoom, this.pos.z + Math.cos(this.yaw) * this.mapZoom * 0.35);
+      const want = new THREE.Vector3(focus.x - Math.sin(yaw) * this.mapZoom * 0.35, focus.y + this.mapZoom, focus.z + Math.cos(yaw) * this.mapZoom * 0.35);
       cam.position.lerp(want, Math.min(1, dt * 5));
-      cam.lookAt(this.pos.x, this.pos.y, this.pos.z);
+      cam.lookAt(focus.x, focus.y, focus.z);
       cam.fov = 50;
     }
     cam.updateProjectionMatrix();
 
     if (this.routeLine) this.routeLine.visible = this.view === "map";
-    this.astronaut.visible = this.view !== "fpv";
+    this.astronaut.visible = this.view !== "fpv" || remote;
+    this.drone.visible = !(this.view === "fpv" && this.control === "superjar"); // do not film the inside of the drone
     this.astronaut.position.copy(this.pos);
     this.astronaut.rotation.y = -this.yaw;
     this.astronaut.scale.setScalar(this.view === "map" ? Math.max(1, this.mapZoom / 70) : 1);
@@ -1589,7 +1976,7 @@ export class MarsEngine {
     }
     const [ga, gb] = dot(this.goal.x, this.goal.z, "#35e0c2", 6);
     label("SCIENCE STOP", ga, gb, "#35e0c2");
-    if (this.droneMode === "goto" || this.droneMode === "hold") {
+    if (this.droneMode === "goto") {
       const [tx, ty] = P(this.droneTarget.x, this.droneTarget.z);
       const [qx, qy] = P(this.drone.position.x, this.drone.position.z);
       ctx.strokeStyle = "#ffffff";
