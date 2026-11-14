@@ -53,7 +53,7 @@ function bump(x: number, z: number): number {
 
 export type Crew = "superjar" | "rover";
 export type RoverMode = "follow" | "hold" | "goto" | "rescue" | "manual";
-export type DroneMode = "route" | "recall" | "goto" | "hold" | "manual";
+export type DroneMode = "route" | "recall" | "follow" | "goto" | "hold" | "manual";
 /** Who the keys and the camera belong to. */
 export type Control = "astronaut" | Crew;
 export type Phase = "scout" | "walk" | "storm" | "sheltered" | "arrived";
@@ -1176,7 +1176,7 @@ export class MarsEngine {
       want = pointAlong(this.route, Math.min(len, this.droneDist));
       alt = this.phase === "scout" ? 14 : 7;
       cap = this.phase === "scout" ? 200 : DRONE_SPEED * 1.5;
-    } else if (this.droneMode === "recall") {
+    } else if (this.droneMode === "recall" || this.droneMode === "follow") {
       want = { x: this.pos.x + Math.sin(this.yaw) * 4 + Math.cos(this.yaw) * 1.5, z: this.pos.z - Math.cos(this.yaw) * 4 + Math.sin(this.yaw) * 1.5 };
       alt = 2.6;
       cap = DRONE_SPEED;
@@ -1210,7 +1210,13 @@ export class MarsEngine {
         this.droneMode = "hold";
         this.say(this.surveyReport(this.droneTarget), "info");
       } else if (this.droneMode === "recall") {
-        this.say("SuperJar is back with you.", "info");
+        // Came back: stay right here. It only trails the astronaut when told "follow me".
+        this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
+        this.droneHoldAlt = 2.6;
+        this.droneMode = "hold";
+        this.say('SuperJar is back with you and holding here. Say "follow me" and I will stay at your side.', "info");
+      } else if (this.droneMode === "follow") {
+        this.say("SuperJar is at your side and following.", "info");
       }
     }
   }
@@ -1275,6 +1281,15 @@ export class MarsEngine {
     this.say(`Coming back to you, ${Math.round(d)} m.`, "info");
   }
 
+  /** Stay at the astronaut's side and keep up as they walk. */
+  followDrone(): void {
+    if (this.scoutBusy()) return;
+    this.droneMode = "follow";
+    this.droneArrived = false;
+    const d = Math.hypot(this.pos.x - this.drone.position.x, this.pos.z - this.drone.position.z);
+    this.say(d < 6 ? "Following you." : `Coming to you, ${Math.round(d)} m, then following.`, "info");
+  }
+
   escortDrone(): void {
     if (this.scoutBusy()) return;
     this.droneMode = "route";
@@ -1312,7 +1327,8 @@ export class MarsEngine {
     }
     if (to === "rover") return this.commandRover(q);
     if (has(/\b(come back|comeback|return|recall|to me|come here|back to me|call back)\b/)) return this.recallDrone();
-    if (has(/\b(escort|follow|resume|lead|scout ahead|go ahead|carry on)\b/)) return this.escortDrone();
+    if (has(/\b(follow|with me|stay close|tag along|at my side)\b/)) return this.followDrone();
+    if (has(/\b(escort|resume|lead|scout ahead|go ahead|carry on)\b/)) return this.escortDrone();
     if (has(/\b(stop|hold|stay|hover|wait)\b/)) {
       if (this.scoutBusy()) return;
       this.droneTarget = { x: this.drone.position.x, z: this.drone.position.z };
@@ -1360,7 +1376,7 @@ export class MarsEngine {
     if (has(/status|report|sitrep|summary|how are we|ok\?/)) {
       return this.say(`${this.advice()} Dose rate ${(this.doseRate / this.baseline).toFixed(2)}x baseline, EVA dose ${this.evaDose.toFixed(1)} µGy, oxygen ${Math.round(this.o2)}%.`, "info");
     }
-    this.say('I can: "come back", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point. Driving orders go to the rover: switch to its tab.', "info");
+    this.say('I can: "come back", "follow me", "scout ahead", "hold", "check the shelter", "go to the science stop", "go to S07", or coordinates like "18.4601, 77.4052". Ask me about radiation, the storm, hazards, the route or your suit. Or open the map (G) and click a point. Driving orders go to the rover: switch to its tab.', "info");
   }
 
   /** Orders for the rover. It only drives, parks and recharges the suit; questions go to SuperJar. */
