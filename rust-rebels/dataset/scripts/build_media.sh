@@ -38,6 +38,7 @@ cp "$RAW/models/astronaut_quaternius.glb" "$OUT/models/astronaut.glb"
 cp "$RAW/models/astronaut_classic_jtoastie.glb" "$OUT/models/astronaut_classic.glb"
 # Supplied by hand (no download link recorded): place the file in dataset/raw/models/ first.
 cp "$RAW/models/astronaut_realistic.glb" "$OUT/models/astronaut_realistic.glb"
+cp "$RAW/models/android-rigged.glb" "$OUT/models/android.glb"
 cp "$RAW/models/aces_suit.glb" "$OUT/models/aces_suit.glb"
 cp "$RAW/models/emu_suit.glb" "$OUT/models/emu_suit.glb"
 
