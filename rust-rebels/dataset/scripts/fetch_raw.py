@@ -63,6 +63,9 @@ def models() -> None:
     base = "https://mars.nasa.gov/system/resources/gltf_files/"
     for name in ("25042_Perseverance.glb", "25043_Ingenuity_v3.glb"):
         get(base + name, RAW / "models" / name)
+    # Z2 planetary-surface prototype suit, from NASA's 3D Resources repository.
+    get("https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Z2%20Spacesuit/Z2%20Spacesuit.glb",
+        RAW / "models" / "z2_spacesuit.glb")
 
 
 MEDIA = {

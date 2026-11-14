@@ -3,6 +3,7 @@
 // Simulated: new hazards, vitals, consumables, scout detections, walking speed.
 
 import * as THREE from "three";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CELL, GRID, MAX_SLOPE_DEG, SITE_M, World, pathLength, pointAlong, progressAlong, solveRoute, type Blocker, type TerrainMeta, type Vec2 } from "./world";
 
@@ -117,6 +118,8 @@ export class MarsEngine {
   private walkPhase = 0;
   private astronaut = new THREE.Group();
   private limbs: THREE.Object3D[] = [];
+  private suit?: THREE.Object3D; // NASA Z2 suit model; replaces the placeholder figure once loaded
+  private rig?: { thighL: THREE.Bone; thighR: THREE.Bone; shinL: THREE.Bone; shinR: THREE.Bone; armL: THREE.Bone; armR: THREE.Bone };
   private view: ViewMode = "fpv";
   private mapZoom = 520;
   private autopilot = false;
@@ -408,6 +411,9 @@ export class MarsEngine {
 
   private async loadModels(): Promise<void> {
     const loader = new GLTFLoader();
+    const draco = new DRACOLoader().setDecoderPath("/draco/");
+    loader.setDRACOLoader(draco);
+    this.cleanup.push(() => draco.dispose());
     const fit = (obj: THREE.Object3D, size: number) => {
       const box = new THREE.Box3().setFromObject(obj);
       const dim = box.getSize(new THREE.Vector3());
@@ -420,10 +426,19 @@ export class MarsEngine {
       wrap.add(obj);
       return wrap;
     };
-    const [rover, heli] = await Promise.allSettled([
+    const [rover, heli, suit] = await Promise.allSettled([
       loader.loadAsync(`${DATA}/models/perseverance.glb`),
       loader.loadAsync(`${DATA}/models/ingenuity.glb`),
+      loader.loadAsync(`${DATA}/models/z2_spacesuit.glb`),
     ]);
+    if (suit.status === "fulfilled") {
+      const posed = fit(suit.value.scene, 1.95);
+      posed.rotation.y = Math.PI; // the model faces +Z; the player faces -Z
+      this.suit = this.rigSuit(posed) ?? posed;
+      this.astronaut.clear();
+      this.limbs = [];
+      this.astronaut.add(this.suit);
+    }
     if (rover.status === "fulfilled") {
       const r = fit(rover.value.scene, 3.4);
       const rx = BASE.x + 9, rz = -BASE.y - 6;
@@ -441,6 +456,62 @@ export class MarsEngine {
     glow.position.y = 0.5;
     this.drone.add(glow);
     this.scene.add(this.drone);
+  }
+
+  /**
+   * NASA ships the Z2 suit as one unjointed mesh. To make it walk we add our own skeleton:
+   * six bones (thighs, shins, arms) and per-vertex weights chosen from where each vertex sits.
+   * Measured on the model at 1.95 m tall, facing -Z: legs are separate below 0.7 m, the hips
+   * end near 0.8 m, and the arms are the parts outside the torso or reaching forward of it.
+   */
+  private rigSuit(posed: THREE.Object3D): THREE.Object3D | null {
+    let source: THREE.Mesh | undefined;
+    posed.updateMatrixWorld(true);
+    posed.traverse((o) => { if ((o as THREE.Mesh).isMesh && !source) source = o as THREE.Mesh; });
+    if (!source) return null;
+    const geo = source.geometry.clone().applyMatrix4(source.matrixWorld);
+    const pos = geo.attributes.position;
+    const n = pos.count;
+    const skinIndex = new Uint16Array(n * 4);
+    const skinWeight = new Float32Array(n * 4);
+    const step = (v: number, a: number, b: number) => { const k = Math.min(1, Math.max(0, (v - a) / (b - a))); return k * k * (3 - 2 * k); };
+    const BODY = 0, THIGH_L = 1, SHIN_L = 2, THIGH_R = 3, SHIN_R = 4, ARM_L = 5, ARM_R = 6;
+    for (let i = 0; i < n; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ax = Math.abs(x);
+      const leg = 1 - step(y, 0.68, 0.84);
+      const shin = leg * (1 - step(y, 0.36, 0.48));
+      const thigh = leg - shin;
+      const beside = step(ax, 0.25, 0.31) * step(y, 0.9, 0.98) * (1 - step(y, 1.5, 1.58)) * (1 - step(z, 0.1, 0.18));
+      const ahead = step(-z, 0.16, 0.24) * step(ax, 0.12, 0.18) * step(y, 0.88, 0.94) * (1 - step(y, 1.36, 1.44));
+      const arm = Math.max(beside, ahead) * (1 - leg);
+      const left = x < 0;
+      const o = i * 4;
+      skinIndex[o] = BODY; skinWeight[o] = Math.max(0, 1 - leg - arm);
+      skinIndex[o + 1] = left ? THIGH_L : THIGH_R; skinWeight[o + 1] = thigh;
+      skinIndex[o + 2] = left ? SHIN_L : SHIN_R; skinWeight[o + 2] = shin;
+      skinIndex[o + 3] = left ? ARM_L : ARM_R; skinWeight[o + 3] = arm;
+    }
+    geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndex, 4));
+    geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeight, 4));
+
+    const bone = (x: number, y: number, z: number, parent?: THREE.Bone) => {
+      const b = new THREE.Bone();
+      b.position.set(x, y, z);
+      parent?.add(b);
+      return b;
+    };
+    const body = bone(0, 0, 0);
+    const thighL = bone(-0.16, 0.8, 0.07, body), shinL = bone(-0.03, -0.38, 0, thighL);
+    const thighR = bone(0.16, 0.8, 0.07, body), shinR = bone(0.03, -0.38, 0, thighR);
+    const armL = bone(-0.3, 1.42, 0.05, body), armR = bone(0.3, 1.42, 0.05, body);
+    const mesh = new THREE.SkinnedMesh(geo, source.material);
+    mesh.add(body);
+    mesh.bind(new THREE.Skeleton([body, thighL, shinL, thighR, shinR, armL, armR]));
+    mesh.frustumCulled = false;
+    this.rig = { thighL, thighR, shinL, shinR, armL, armR };
+    const wrap = new THREE.Group();
+    wrap.add(mesh);
+    return wrap;
   }
 
   // --- mission --------------------------------------------------------------
@@ -986,8 +1057,8 @@ export class MarsEngine {
       cam.lookAt(head.clone().add(dir));
       cam.fov = 74;
     } else if (this.view === "tpv") {
-      const back = dir.clone().multiplyScalar(-6.2);
-      const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(this.yaw) * 0.9, 1.2, Math.sin(this.yaw) * 0.9));
+      const back = dir.clone().multiplyScalar(-4.4);
+      const want = head.clone().add(back).add(new THREE.Vector3(Math.cos(this.yaw) * 0.75, 0.75, Math.sin(this.yaw) * 0.75));
       want.y = Math.max(want.y, this.world.heightAt(want.x, want.z) + 0.6);
       cam.position.lerp(want, Math.min(1, dt * 12));
       cam.lookAt(head.clone().add(dir.clone().multiplyScalar(12)));
@@ -1007,6 +1078,25 @@ export class MarsEngine {
     this.astronaut.scale.setScalar(this.view === "map" ? Math.max(1, this.mapZoom / 70) : 1);
     const swing = Math.sin(this.walkPhase) * 0.75 * Math.min(1, this.speed / WALK);
     this.limbs.forEach((l, i) => { l.rotation.x = (i % 2 ? -swing : swing) * (i < 2 ? 1 : -0.8); });
+    if (this.suit) {
+      const gait = Math.min(1, this.speed / WALK);
+      this.suit.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.07 * gait;
+      this.suit.rotation.z = Math.sin(this.walkPhase) * 0.05 * gait;
+      this.suit.rotation.x = -0.06 * gait * Math.min(2, this.speed / WALK);
+    }
+    if (this.rig) {
+      const gait = Math.min(1, this.speed / WALK);
+      const run = Math.min(1, Math.max(0, (this.speed - WALK) / (SPRINT - WALK)));
+      const reach = (0.5 + run * 0.25) * gait; // thigh swing, radians
+      const a = this.walkPhase, air = this.grounded ? 0 : 0.35;
+      // Positive X rotation swings a limb forward (the figure faces -Z); knees only fold backward.
+      this.rig.thighL.rotation.x = Math.sin(a) * reach + air;
+      this.rig.thighR.rotation.x = -Math.sin(a) * reach + air;
+      this.rig.shinL.rotation.x = -(0.08 + (0.75 + run * 0.4) * Math.max(0, Math.cos(a + 0.5))) * gait - air * 1.6;
+      this.rig.shinR.rotation.x = -(0.08 + (0.75 + run * 0.4) * Math.max(0, -Math.cos(a + 0.5))) * gait - air * 1.6;
+      this.rig.armL.rotation.x = -Math.sin(a) * 0.3 * gait;
+      this.rig.armR.rotation.x = Math.sin(a) * 0.3 * gait;
+    }
     if (this.routeMesh) (this.routeMesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(this.realT * 4) * 0.25;
     (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.sin(this.realT * 3) * 0.07;
 

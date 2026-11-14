@@ -28,6 +28,7 @@ Open http://localhost:3000 for the pitch and http://localhost:3000/app for the g
 - `src/app/page.tsx`: homepage content and sections
 - `src/app/app/page.tsx`: the Marswalk game at `/app`
 - `src/features/game/`: game engine (`engine.ts`, three.js), terrain lookups and route solver (`world.ts`), HUD (`MarsGame.tsx`, `game.css`)
+- `public/draco/`: Draco decoder copied from three.js, needed to load the compressed suit model
 - `public/dataset/`: NASA terrain, radiation and model files the game loads; see `dataset/README.md`
 - `src/app/layout.tsx`: root layout and site metadata
 - `src/app/globals.css`: Tailwind import and visual styles

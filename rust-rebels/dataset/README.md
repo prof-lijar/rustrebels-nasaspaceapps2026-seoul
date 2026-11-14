@@ -40,6 +40,7 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | `audio/sounds_of_mars.mp3` | Sound track of NASA's "Sounds of Mars" compilation video (149 s), uncut. Not used in the game | NASA/JPL-Caltech |
 | `video/jezero_delta_overview.mp4`, `video/ingenuity_third_flight.mp4` | 720p clips with poster frames | NASA/JPL-Caltech |
 | `models/perseverance.glb`, `models/ingenuity.glb` | NASA 3D models, unchanged | NASA/JPL-Caltech |
+| `models/z2_spacesuit.glb` | NASA Z2 planetary-surface prototype suit, the player figure. Textures reduced from 4096 to 1024 px, geometry untouched. The game adds its own skeleton at load time so it can walk | NASA 3D Resources |
 
 ## Sources
 
@@ -55,6 +56,7 @@ Scene coordinates are metres from the centre of the square: `x` east, `y` north,
 | Perseverance microphone clips | https://science.nasa.gov/resource/perseverance-rovers-supercam-records-wind-on-mars/ and the sibling resource pages named in `fetch_raw.py` | NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero |
 | Videos | https://images.nasa.gov/ | NASA/JPL-Caltech |
 | 3D models | https://mars.nasa.gov/system/resources/gltf_files/ | NASA/JPL-Caltech |
+| Z2 spacesuit model | https://github.com/nasa/NASA-3D-Resources/tree/master/3D%20Models/Z2%20Spacesuit | NASA (the repository states its assets are free and without copyright) |
 
 NASA media is generally free to use with credit and without implying NASA endorsement. Show the credits above in the app.
 

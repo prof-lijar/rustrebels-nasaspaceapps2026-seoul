@@ -30,8 +30,10 @@ web_video() { # input output crf [extra ffmpeg args]
 web_video "$RAW/media/ingenuity_third_flight_mastcamz.mp4" "$OUT/video/ingenuity_third_flight.mp4" 27
 web_video "$RAW/media/perseverance_explores_jezero_delta.mp4" "$OUT/video/jezero_delta_overview.mp4" 29
 
-# 3D models: NASA's own glTF binaries, unchanged.
+# 3D models: NASA's own glTF binaries. Rover and helicopter are unchanged.
 cp "$RAW/models/25042_Perseverance.glb" "$OUT/models/perseverance.glb"
 cp "$RAW/models/25043_Ingenuity_v3.glb" "$OUT/models/ingenuity.glb"
+# The Z2 suit ships 4096 px textures (17 MB); 1024 px is plenty at game distance (1 MB).
+python3 dataset/scripts/shrink_glb.py "$RAW/models/z2_spacesuit.glb" "$OUT/models/z2_spacesuit.glb" 1024
 
 ls -la "$OUT/audio" "$OUT/video" "$OUT/models"

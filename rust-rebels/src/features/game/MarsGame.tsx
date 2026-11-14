@@ -217,13 +217,13 @@ export function MarsGame() {
             <b>What is real, what is simulated</b>
             <dl>
               <dt>Real NASA data</dt>
-              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, and the SuperCam laser (sol 12), played when SuperJar flags a hazard (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
+              <dd>Terrain and imagery: HiRISE mosaic of Jezero, 4 m mesh, 2 m image (NASA/JPL-Caltech/University of Arizona/USGS). Base and science stop: Perseverance waypoints (NASA/JPL-Caltech). Dose rate: Curiosity RAD, 7–14 Sep 2017 (NASA/JPL-Caltech/SwRI). Storm alert: NASA DONKI. Rover and helicopter models: NASA/JPL-Caltech. Astronaut: NASA&apos;s Z2 planetary-surface prototype suit, from NASA 3D Resources. Sound: Perseverance microphone recordings of Martian wind (sol 4), the Ingenuity helicopter in flight, and the SuperCam laser (sol 12), played when SuperJar flags a hazard (NASA/JPL-Caltech/LANL/CNES/CNRS/ISAE-Supaero).</dd>
               <dt>Derived by us</dt>
               <dd>Slope, route, sky fraction and shelter spots, all computed from the HiRISE elevation. Dose rate shown is RAD × sky fraction. That is a geometric estimate, not a dose calculation.</dd>
               <dt>Simulated</dt>
               <dd>New boulders, sand and rockfall; SuperJar&apos;s detections; vitals, oxygen and battery; walking speed; small scattered stones and ground grain; the storm alarm tone. The mission clock runs 60× real time and the storm replays 600× faster than it happened.</dd>
               <dt>Know this</dt>
-              <dd>RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
+              <dd>RAD measured Gale crater, not Jezero. Ground colour is a tint over a greyscale image. The drone is drawn about twice life size. The suit model has no joints, so the walking motion comes from a simple skeleton we added (thighs, shins, arms); it is our animation, not NASA motion data. Recordings are made louder than the originals and the helicopter gets quieter with distance.</dd>
             </dl>
             <button type="button" onClick={() => setInfo(false)}>Close</button>
           </div>
