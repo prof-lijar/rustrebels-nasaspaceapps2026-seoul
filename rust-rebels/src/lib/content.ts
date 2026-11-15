@@ -74,9 +74,11 @@ export const datasets = [
   { name: "DONKI", mission: "NASA CCMC", layer: "Space-weather storm trigger" },
 ];
 
+// Two people and SuperJar.
 export const crew = [
-  { name: "Li Jar", role: "Engineer · KAIST OverEdge" },
-  { name: "Dr. Amar", role: "Researcher · radiation, nuclear & X-ray physics · KAIST" },
+  { name: "Li Jar", role: "Engineer, KAIST OverEdge" },
+  { name: "Dr. Amar", role: "Radiation and X-ray physics, KAIST" },
+  { name: "SuperJar", role: "AI scout drone" },
 ];
 
 export const links = {

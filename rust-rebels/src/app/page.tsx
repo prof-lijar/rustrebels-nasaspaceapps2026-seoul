@@ -173,13 +173,13 @@ export default function Home() {
           <p className="eyebrow">06 / The crew</p>
           <div className="crew-grid">
             <div>
-              <h2 id="crew-title">Houston, we&rsquo;ve met Rocky.</h2>
+              <h2 id="crew-title">Meet the crew.</h2>
               <ul className="crew-list">
                 {crew.map((c) => (
                   <li key={c.name}><strong>{c.name}</strong><span>{c.role}</span></li>
                 ))}
               </ul>
-              <p>Plus two field robots: SuperJar, the scout who also guards the cookies, and Rocky, who carries the rocks.</p>
+              <p>Two people and one field robot. SuperJar scouts the route, and also guards the cookies.</p>
               <p className="link-row">
                 <a className="text-link" href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page on Space Apps <span aria-hidden="true">↗</span></a>
                 <a className="text-link" href={links.github} target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>

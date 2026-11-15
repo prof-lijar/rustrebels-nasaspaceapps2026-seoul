@@ -198,3 +198,4 @@ h2 { margin: 0 0 28px; font-size: clamp(32px, 3.5vw, 54px); line-height: 1.1; le
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 .deck-demo { margin-top: 34px; }
+@media (min-width: 641px) { .crew-list { grid-template-columns: 1fr 1fr; } }
