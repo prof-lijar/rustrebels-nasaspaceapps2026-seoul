@@ -10,11 +10,18 @@ Created: 2026-11-03
 
 **Challenge:** Interplanetary Survival Guide: Martian Map.
 
+**SuperJar website:** [https://super-jar.com/](https://super-jar.com/).
+
 **Published team:** [Rust Rebels](https://www.spaceappschallenge.org/2026/find-a-team/arc-playground/), Seoul. Name, challenge, introduction, image, and recruiting interests verified on the published page on 2026-11-03. The original URL remains in use. [Verification screenshot](assets/rust-rebels-published.jpg).
 
 ## Team introduction
 
-Big ideas. Real science. A little mischief. We're Rust Rebels, bringing garage-inventor energy to Mars exploration. Our aim: turn NASA terrain, imagery, and geological data into an intuitive tool for planning science-rich Marswalks, comparing routes, and making uncertainty visible. We're looking for curious builders in coding, planetary science, geospatial analysis, data visualization, and design. Serious curiosity. Bold experiments. Red dust on everything.
+We're Rust Rebels from Seoul. We build [SuperJar](https://super-jar.com/) to do work for people wherever it is installed: on robots, drones and other devices. Marswalk is our Mars demonstration.
+
+- Li Jar — AI engineer · Top 25 KAIST OverEdge entrepreneur. Leads the app, AI integration and demo.
+- Dr. Amar Prasad Gupta — KAIST researcher · former Harvard faculty, Department of Radiology. Leads radiation-science review and checks the HUD and slides.
+
+[https://super-jar.com/](https://super-jar.com/)
 
 ## Team image
 

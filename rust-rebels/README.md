@@ -2,6 +2,10 @@
 
 A Next.js + TypeScript starter website for Rust Rebels, with App Router, Tailwind CSS 4, ESLint, and a responsive Mars-themed homepage.
 
+SuperJar website: [https://super-jar.com/](https://super-jar.com/).
+
+We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices. Marswalk is our Mars demonstration.
+
 ## Run locally
 
 Use Node.js 24 (see `.nvmrc`) and pnpm (see `packageManager` in `package.json`), then:

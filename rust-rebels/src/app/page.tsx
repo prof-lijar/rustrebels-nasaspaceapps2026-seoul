@@ -179,8 +179,9 @@ export default function Home() {
                   <li key={c.name}><strong>{c.name}</strong><span>{c.role}</span></li>
                 ))}
               </ul>
-              <p>Two people and one field robot. SuperJar scouts the route, and also guards the cookies.</p>
+              <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices. Marswalk is our Mars demonstration.</p>
               <p className="link-row">
+                <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar <span aria-hidden="true">↗</span></a>
                 <a className="text-link" href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page on Space Apps <span aria-hidden="true">↗</span></a>
                 <a className="text-link" href={links.github} target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>
               </p>
@@ -200,6 +201,7 @@ export default function Home() {
       <footer className="site-footer">
         <span>RUST REBELS · NASA Space Apps Challenge 2026 · Seoul</span>
         <nav aria-label="External links" className="footer-links">
+          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar</a>
           <a href={links.challenge} target="_blank" rel="noopener noreferrer">Challenge brief</a>
           <a href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page</a>
           <a href={links.github} target="_blank" rel="noopener noreferrer">GitHub</a>
