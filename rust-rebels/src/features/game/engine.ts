@@ -177,6 +177,7 @@ export class MarsEngine {
   private previewCam = new THREE.PerspectiveCamera(30, 0.75, 0.1, 9000);
   // Start screen: the astronaut stands on the right of the picture, walking on the spot.
   private showcase = false;
+  private coverTag?: HTMLDivElement;
   private suitPopAt = -10;
   private suitCache = new Map<SuitId, Promise<LoadedSuit>>();
   private view: ViewMode = "tpv";
@@ -1896,8 +1897,8 @@ export class MarsEngine {
       // of the picture, clear of the start screen's text.
       const w = this.container.clientWidth, h = this.container.clientHeight;
       const around = this.yaw + 0.45 + Math.sin(this.realT * 0.5) * 0.5;
-      cam.position.set(this.pos.x + Math.sin(around) * 4.4, this.pos.y + 1.15, this.pos.z - Math.cos(around) * 4.4);
-      cam.lookAt(this.pos.x, this.pos.y + 0.98, this.pos.z);
+      cam.position.set(this.pos.x + Math.sin(around) * 5.2, this.pos.y + 1.3, this.pos.z - Math.cos(around) * 5.2);
+      cam.lookAt(this.pos.x, this.pos.y + 1.3, this.pos.z); // aimed high enough to leave room for SuperJar overhead
       cam.fov = 36;
       cam.setViewOffset(w, h, -0.24 * w, 0, w, h);
     } else if (cam.view?.enabled) {
@@ -1924,9 +1925,53 @@ export class MarsEngine {
     // Keep the sky centred on the camera; a fixed dome falls outside the far plane near the site edges.
     this.renderPreview();
     this.sky?.position.copy(cam.position);
-    this.renderer.render(this.scene, cam);
+    if (this.showcase) {
+      // On the start screen SuperJar circles just above the astronaut. Only the picture changes:
+      // its real place in the mission is put back as soon as the frame is drawn.
+      const d = this.drone, at = d.position.clone(), turn = d.rotation.clone(), size = d.scale.x, shown = d.visible;
+      // A flat loop laid out across the camera's view (wide side to side, shallow front to back),
+      // so it stays in the picture however the camera sways.
+      const t = this.realT * 0.7;
+      const toCam = new THREE.Vector3(cam.position.x - this.pos.x, 0, cam.position.z - this.pos.z).normalize();
+      const side = new THREE.Vector3(-toCam.z, 0, toCam.x);
+      d.position.set(this.pos.x, this.pos.y + 2.3 + Math.sin(this.realT * 1.9) * 0.06, this.pos.z)
+        .addScaledVector(side, Math.sin(t) * 1.25).addScaledVector(toCam, -0.5 - Math.cos(t) * 0.55);
+      const vx = side.x * Math.cos(t) + toCam.x * Math.sin(t) * 0.44, vz = side.z * Math.cos(t) + toCam.z * Math.sin(t) * 0.44;
+      d.rotation.set(0.08, Math.atan2(vx, vz), 0, "YXZ"); // nose along the loop
+      d.scale.setScalar(0.5); // life size here; in the mission it is drawn larger to read at distance
+      d.visible = true;
+      this.renderer.render(this.scene, cam);
+      this.placeCoverTag(d.position, cam);
+      d.position.copy(at);
+      d.rotation.copy(turn);
+      d.scale.setScalar(size);
+      d.visible = shown;
+    } else {
+      this.renderer.render(this.scene, cam);
+      if (this.coverTag) this.coverTag.style.display = "none";
+    }
     this.placeMarkers();
     this.updateAudio();
+  }
+
+  /** The start screen's name tag for SuperJar: a target box that rides on the helicopter, with its callsign beside it. */
+  private placeCoverTag(at: THREE.Vector3, cam: THREE.PerspectiveCamera): void {
+    if (!this.coverTag) {
+      const el = document.createElement("div");
+      el.className = "mg-cover-tag";
+      el.setAttribute("aria-hidden", "true");
+      el.innerHTML = '<i class="mg-cover-box"></i><i class="mg-cover-line"></i><div class="mg-cover-name"><small>Scout drone · SJ-01 · tracking</small><b>SUPER<em>JAR</em></b><span>flies on 1% of Earth&rsquo;s air</span></div>';
+      this.markerLayer.appendChild(el);
+      this.coverTag = el;
+    }
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const dist = at.distanceTo(cam.position);
+    const v = at.clone().setY(at.y + 0.22).project(cam); // the model's middle sits a little above its origin
+    // Box sized to the helicopter as drawn: 0.5 m either side of its mast.
+    const half = (0.5 / (dist * Math.tan((cam.fov * Math.PI) / 360))) * (h / 2);
+    this.coverTag.style.display = "block";
+    this.coverTag.style.setProperty("--half", `${half.toFixed(1)}px`);
+    this.coverTag.style.transform = `translate(${(((v.x + 1) / 2) * w).toFixed(1)}px, ${(((1 - v.y) / 2) * h).toFixed(1)}px)`;
   }
 
   private placeMarkers(): void {
