@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SUITS, type SuitId } from "./suits";
+import { DEMO_LENGTH, type DemoUi } from "./demo";
 import { MarsEngine, type Crew, type DroneMode, type HudState, type RoverMode, type ViewMode } from "./engine";
 import "./game.css";
 
@@ -85,7 +86,8 @@ function Bar({ label, value, unit, sim = true }: { label: string; value: number;
   );
 }
 
-export function MarsGame() {
+/** `film`: the /demo page. It opens on a play button for the 30-second demo instead of the start screen. */
+export function MarsGame({ film = false }: { film?: boolean }) {
   const stage = useRef<HTMLDivElement>(null);
   const markers = useRef<HTMLDivElement>(null);
   const minimap = useRef<HTMLCanvasElement>(null);
@@ -99,6 +101,7 @@ export function MarsGame() {
   const [draft, setDraft] = useState("");
   const [crew, setCrew] = useState<Crew>("superjar");
   const [wardrobe, setWardrobe] = useState(false);
+  const [demo, setDemo] = useState<DemoUi | null>(null);
   const chat = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
 
@@ -125,29 +128,45 @@ export function MarsGame() {
     return () => window.removeEventListener("keydown", onKey);
   }, [started]);
 
-  // The suit choice is remembered on this device. Storage can be blocked; the game works without it.
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("marswalk-suit");
-      if (saved && SUITS.some((s) => s.id === saved)) void engine.current?.setSuit(saved as SuitId);
-    } catch { /* keep the default suit */ }
-  }, []);
+  // Every visit starts in the Explorer suit, on the start screen and in the game. A change of suit
+  // lasts until the page is reloaded; it is not remembered.
   const suit = hud?.suit ?? "explorer"; // the engine reports which suit is on
   // The walking preview is drawn by the engine into the picker's canvas while a picker is on screen.
   // On the start screen the astronaut itself stands large on the right instead.
   useEffect(() => {
     if (ready) engine.current?.setShowcase(!started);
   }, [ready, started]);
+  // Voices for the film: recordings made with ElevenLabs (dataset/scripts/make_demo_voice.py).
+  // Nothing is synthesised in the browser; a line with no recording is shown as a caption only.
+  const [voice, setVoice] = useState<{ lines: string[]; theme: boolean }>({ lines: [], theme: false });
+  useEffect(() => {
+    fetch("/dataset/audio/demo/manifest.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((m) => { if (m && Array.isArray(m.lines)) setVoice({ lines: m.lines, theme: !!m.theme }); }).catch(() => { /* no recordings yet */ });
+  }, []);
+  const lineId = demo?.line?.id ?? "";
+  const soundOn = hud?.sound ?? true;
+  const recorded = voice.lines.includes(lineId);
+  useEffect(() => {
+    if (!lineId || !soundOn || !recorded) return;
+    const clip = new Audio(`/dataset/audio/demo/line-${lineId}.mp3`);
+    void clip.play().catch(() => { /* blocked or missing: the caption still shows */ });
+    return () => clip.pause();
+  }, [lineId, recorded, soundOn]);
+  // Theme music under the film, when a recording exists.
+  const filming = !!demo; // it plays on under the end card
+  useEffect(() => {
+    if (!filming || !voice.theme || !soundOn) return;
+    const theme = new Audio("/dataset/audio/demo/theme.mp3");
+    theme.volume = 0.32;
+    void theme.play().catch(() => { /* blocked or missing */ });
+    return () => theme.pause();
+  }, [filming, voice.theme, soundOn]);
   const pickerShown = ready && started && wardrobe;
   useEffect(() => {
     const eng = engine.current;
     eng?.setPreview(pickerShown ? previewRef.current : null);
     return () => eng?.setPreview(null);
   }, [pickerShown, suit]);
-  const wear = (id: SuitId) => {
-    void engine.current?.setSuit(id);
-    try { window.localStorage.setItem("marswalk-suit", id); } catch { /* not saved */ }
-  };
+  const wear = (id: SuitId) => void engine.current?.setSuit(id);
   const worn = SUITS.find((x) => x.id === suit);
   // A compact picker: one row of names per group, and a small picture of the chosen suit walking.
   const suitPicker = (
@@ -173,10 +192,26 @@ export function MarsGame() {
   };
 
   const begin = (auto: boolean) => {
+    engine.current?.stopDemo();
     setStarted(true);
     engine.current?.startAudio();
     engine.current?.setAutopilot(auto);
     if (!auto) engine.current?.requestLock();
+  };
+
+  // The 30-second film. It is scripted end to end; the mission underneath is reset when it stops.
+  const playDemo = () => {
+    const eng = engine.current;
+    if (!eng) return;
+    eng.setDemoListener(setDemo);
+    setStarted(true);
+    setWardrobe(false);
+    eng.startAudio();
+    eng.startDemo();
+  };
+  const leaveDemo = () => {
+    engine.current?.stopDemo();
+    setStarted(false);
   };
 
   const storm = hud?.phase === "storm";
@@ -188,7 +223,7 @@ export function MarsGame() {
       <div ref={markers} className="mg-markers" />
       <div className="mg-visor" aria-hidden="true" />
 
-      <div className={`mg-hud ${started && hud ? "" : "mg-hidden"}`}>
+      <div className={`mg-hud ${started && hud ? "" : "mg-hidden"} ${demo ? "mg-hud-film" : ""}`}>
         <div className="mg-top">
           <Compass heading={hud?.heading ?? 0} bearing={hud?.objectiveBearing ?? 0} />
           <div className="mg-objective">
@@ -348,7 +383,7 @@ export function MarsGame() {
         {hud?.view === "fpv" && <span className="mg-cross" aria-hidden="true" />}
       </div>
 
-      {hud?.phase === "sheltered" && started && (
+      {hud?.phase === "sheltered" && started && !demo && (
         <div className="mg-debrief">
           <b>{hud.docked ? "SHELTERING AT THE ROVER" : "IN SHELTER"}</b>
           <p>EVA dose {hud.evaDose.toFixed(1)} µGy · peak {hud.peakRate.toFixed(1)} µGy/h · now {ratio.toFixed(2)}× baseline</p>
@@ -356,7 +391,61 @@ export function MarsGame() {
         </div>
       )}
 
-      {!started && (
+      {demo && (
+        <div className={`mg-demo ${demo.end ? "mg-demo-over" : ""}`}>
+          <div className="mg-demo-head">
+            {demo.slate && (
+              <div key={demo.slate[0]} className="mg-demo-slate">
+                <b>{demo.slate[0]}</b>
+                <span>{demo.slate[1]}</span>
+              </div>
+            )}
+          </div>
+          <div className="mg-demo-clock">
+            <span>DEMO · 0:{String(demo.second).padStart(2, "0")} / 0:{DEMO_LENGTH}</span>
+            <button type="button" onClick={() => begin(false)}>Skip · play it yourself</button>
+            <i className="mg-demo-progress" style={{ width: `${(demo.second / DEMO_LENGTH) * 100}%` }} />
+          </div>
+          {demo.ping && <div key={demo.ping} className="mg-demo-ping"><i aria-hidden="true" />{demo.ping}</div>}
+          {demo.line && (
+            <p key={demo.line.text} className={`mg-demo-line mg-demo-${demo.line.who === "SUPERJAR" ? "sj" : "you"}`}>
+              {demo.line.who !== "NARRATOR" && <span>{demo.line.who === "SUPERJAR" && <i aria-hidden="true"><u /><u /><u /><u /></i>}{demo.line.who}</span>}
+              {demo.line.text}
+            </p>
+          )}
+          {demo.end && (
+            <div className="mg-demo-end">
+              <p className="mg-eyebrow">Rust Rebels · NASA Space Apps 2026 · Seoul</p>
+              <div className="mg-demo-end-name">SUPER<span>JAR</span></div>
+              <p className="mg-demo-end-line">Walk Mars with SuperJar.</p>
+              <p className="mg-demo-end-note">rust-rebels-mars.vercel.app/app</p>
+              <div className="mg-start-actions">
+                <button type="button" className="mg-primary" onClick={() => begin(false)}>Start the EVA</button>
+                <button type="button" onClick={playDemo}>Replay</button>
+                <button type="button" onClick={leaveDemo}>Back</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!started && film && (
+        <div className="mg-play">
+          {error ? (
+            <p className="mg-error" role="alert">{error} Reload the page to try again.</p>
+          ) : ready ? (
+            <button type="button" className="mg-play-button" onClick={playDemo} aria-label="Play the 30-second demo">
+              <i aria-hidden="true" />
+            </button>
+          ) : (
+            <p className="mg-loading">{status}…</p>
+          )}
+          <p className="mg-play-title">SUPER<span>JAR</span> · the 30-second demo</p>
+          <p className="mg-play-links"><Link href="/app">Play it yourself</Link><Link href="/">Back to the pitch</Link></p>
+        </div>
+      )}
+
+      {!started && !film && (
         <div className="mg-start">
           <p className="mg-eyebrow">Rust Rebels · NASA Space Apps 2026 · Seoul</p>
           <div className="mg-title">MARS<span>WALK</span></div>
@@ -366,7 +455,7 @@ export function MarsGame() {
           ) : ready ? (
             <div className="mg-start-actions">
               <button type="button" className="mg-primary" onClick={() => begin(false)}>Start the EVA</button>
-              <button type="button" onClick={() => begin(true)}>Watch the auto-walk</button>
+              <button type="button" onClick={playDemo}>Watch the 30-second demo</button>
             </div>
           ) : (
             <p className="mg-loading">{status}…</p>

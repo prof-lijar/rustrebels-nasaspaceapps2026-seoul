@@ -1,6 +1,6 @@
 # Rust Rebels: Martian Map pitch deck (extracted)
 
-Source: `RustRebels_MartianMap.pdf` (8 slides, 16:9). Extracted 2026-11-14 for the website copy.
+Source: the earlier 8-slide deck, `RustRebels_MartianMap.pdf`, since replaced by the 7-slide `RustRebels_SuperJar_Marswalk.pdf`. This text is the source of the website copy, not of the current deck. Extracted 2026-11-14 for the website copy.
 Event: NASA Space Apps Challenge 2026 · Seoul. Challenge: Interplanetary Survival Guide: Martian Map.
 
 ## 1. Title

@@ -1,7 +1,9 @@
 import Image from "next/image";
+import Link from "next/link";
 import { AppTour } from "@/components/app-tour";
 import { SlideDeck } from "@/components/slide-deck";
 import { deck } from "@/lib/deck";
+import { HeroScene } from "@/components/hero-scene";
 import { appTour, crew, datasets, demoViews, hazards, links, payload, pipeline, stack, stats, stormSteps, waterVest, xrayLink } from "@/lib/content";
 
 export default function Home() {
@@ -12,27 +14,25 @@ export default function Home() {
         <a className="wordmark" href="#" aria-label="Rust Rebels home">RR<span> / </span>RUST REBELS</a>
         <nav aria-label="Main navigation">
           <a href="#marswalk">App</a>
+          <a href="#deck">Deck</a>
           <a href="#problem">Problem</a>
           <a href="#system">System</a>
           <a href="#storm">Storm</a>
-          <a href="#demo">Demo</a>
+          <Link href="/demo">Demo</Link>
           <a href="#crew">Crew</a>
-          <a href="#deck">Deck <span aria-hidden="true">↗</span></a>
         </nav>
       </header>
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <div className="hero-image">
-            <Image src="/images/rust-rebels-team.png" alt="Fictional Mars expedition concept art: three helmeted explorers studying rocky terrain." fill preload sizes="100vw" />
-          </div>
+          <HeroScene />
           <div className="hero-shade" />
           <div className="hero-content">
             <p className="eyebrow">Interplanetary Survival Guide: Martian Map</p>
             <h1 id="hero-title">RUST<br /><span>REBELS.</span></h1>
             <p className="hero-copy">Science-rich Marswalks. Fewer wrong turns.<br />A scout-first, radiation-aware digital twin for human EVAs.</p>
-            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><a className="text-link" href="#problem">See how it works</a></div>
+            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><Link className="text-link" href="/demo">Watch demo</Link></div>
           </div>
-          <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Fictional expedition concept art</span></div>
+          <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Marswalk · NASA terrain</span></div>
         </section>
 
         <section className="section" id="marswalk" aria-labelledby="marswalk-title">
@@ -45,8 +45,18 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="section" id="deck" aria-labelledby="deck-title">
+          <p className="eyebrow">01 / The deck</p>
+          <div>
+            <h2 id="deck-title">The pitch, in seven slides.</h2>
+            <p>Open the deck, use the arrow keys to move, and press Enter for full-screen presentation mode.</p>
+            <SlideDeck slides={deck.slides} title={deck.title} pdfHref={deck.pdfHref} />
+            <Link className="button deck-demo" href="/demo">Watch the 30-second demo <span aria-hidden="true">▶</span></Link>
+          </div>
+        </section>
+
         <section className="section" id="problem" aria-labelledby="problem-title">
-          <p className="eyebrow">01 / The problem</p>
+          <p className="eyebrow">02 / The problem</p>
           <div>
             <h2 id="problem-title">A radiation field<br />with an old map.</h2>
             <p>Orbital maps are months old. Radiation, dust and terrain change by the hour.</p>
@@ -69,7 +79,7 @@ export default function Home() {
         </section>
 
         <section className="section" id="system" aria-labelledby="system-title">
-          <p className="eyebrow">02 / The system</p>
+          <p className="eyebrow">03 / The system</p>
           <div>
             <h2 id="system-title">Scout first, then walk.</h2>
             <p>SuperJar scouts the route. The digital twin fuses its data with NASA orbital maps. The astronaut sees the result.</p>
@@ -107,7 +117,7 @@ export default function Home() {
         </section>
 
         <section className="section" id="storm" aria-labelledby="storm-title">
-          <p className="eyebrow">03 / The storm</p>
+          <p className="eyebrow">04 / The storm</p>
           <div>
             <h2 id="storm-title">Detect, warn,<br />reroute, shield.</h2>
             <p>The one moment that decides a Marswalk, handled in under ten minutes.</p>
@@ -135,7 +145,7 @@ export default function Home() {
         </section>
 
         <section className="section" id="demo" aria-labelledby="demo-title">
-          <p className="eyebrow">04 / The demo</p>
+          <p className="eyebrow">05 / The demo</p>
           <div>
             <h2 id="demo-title">Live in the browser,<br />built on real NASA data.</h2>
             <p>One crater, three views, one solar storm. Anyone can try it at our project link.</p>
@@ -160,7 +170,7 @@ export default function Home() {
         </section>
 
         <section className="section section-crew" id="crew" aria-labelledby="crew-title">
-          <p className="eyebrow">05 / The crew</p>
+          <p className="eyebrow">06 / The crew</p>
           <div className="crew-grid">
             <div>
               <h2 id="crew-title">Houston, we&rsquo;ve met Rocky.</h2>
@@ -184,16 +194,6 @@ export default function Home() {
                 sizes="(max-width: 640px) 88vw, 36vw"
               />
             </figure>
-          </div>
-        </section>
-
-        <section className="section" id="deck" aria-labelledby="deck-title">
-          <p className="eyebrow">06 / The deck</p>
-          <div>
-            <h2 id="deck-title">The pitch, in eight slides.</h2>
-            <p>Open the deck, use the arrow keys to move, and press Enter for full-screen presentation mode.</p>
-            <SlideDeck slides={deck.slides} title={deck.title} pdfHref={deck.pdfHref} />
-            <a className="text-link" href="#main">Back to the frontier <span aria-hidden="true">↑</span></a>
           </div>
         </section>
       </main>

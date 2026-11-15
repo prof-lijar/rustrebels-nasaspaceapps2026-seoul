@@ -22,11 +22,12 @@ function subscribe(onChange: () => void) {
   return () => query.removeEventListener("change", onChange);
 }
 
-export function PlayGate() {
+/** `film`: open on the 30-second demo instead of the start screen (the /demo page). */
+export function PlayGate({ film = false }: { film?: boolean }) {
   // null on the server and during hydration: the screen size is not known yet.
   const small = useSyncExternalStore<boolean | null>(subscribe, () => window.matchMedia(SMALL_SCREEN).matches, () => null);
   if (small === null) return <div className="pg-blank" />;
-  return small ? <SmallScreen /> : <MarsGame />;
+  return small ? <SmallScreen /> : <MarsGame film={film} />;
 }
 
 function SmallScreen() {

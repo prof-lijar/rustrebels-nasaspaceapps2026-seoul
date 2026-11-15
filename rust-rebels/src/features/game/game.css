@@ -1,3 +1,5 @@
+@import "./cover-tag.css";
+
 /* Marswalk game HUD. Everything is scoped under .mg-root. */
 .mg-root { --mg-c: #35e0c2; --mg-warn: #f5b942; --mg-alert: #ff5a3c; --mg-ink: #f4ede2; --mg-glass: #0e1413b8; position: fixed; inset: 0; overflow: hidden; background: #1a130e; color: var(--mg-ink); font: 12px/1.4 "Courier New", ui-monospace, monospace; letter-spacing: .04em; user-select: none; }
 .mg-root.mg-band-amber { --mg-c: #f5b942; }
@@ -209,22 +211,56 @@
 }
 @media (max-width: 900px) { .mg-start { background: #120d0ad9; } }
 
-/* Start screen: SuperJar's name tag. A target box rides on the helicopter; the callsign hangs off its corner. */
-.mg-cover-tag { position: absolute; z-index: 40; left: 0; top: 0; width: 0; height: 0; --half: 70px; color: var(--mg-c); will-change: transform; }
-.mg-cover-box { position: absolute; left: calc(var(--half) * -1); top: calc(var(--half) * -0.62); width: calc(var(--half) * 2); height: calc(var(--half) * 1.24);
-  background:
-    linear-gradient(currentColor, currentColor) left top / 14px 2px, linear-gradient(currentColor, currentColor) left top / 2px 14px,
-    linear-gradient(currentColor, currentColor) right top / 14px 2px, linear-gradient(currentColor, currentColor) right top / 2px 14px,
-    linear-gradient(currentColor, currentColor) left bottom / 14px 2px, linear-gradient(currentColor, currentColor) left bottom / 2px 14px,
-    linear-gradient(currentColor, currentColor) right bottom / 14px 2px, linear-gradient(currentColor, currentColor) right bottom / 2px 14px;
-  background-repeat: no-repeat; animation: mg-cover-lock 2.6s ease-in-out infinite; }
-.mg-cover-line { position: absolute; right: calc(var(--half) + 6px); top: 0; width: 26px; height: 1px; background: linear-gradient(270deg, currentColor, color-mix(in srgb, currentColor 30%, transparent)); }
-.mg-cover-name { position: absolute; right: calc(var(--half) + 38px); top: 0; transform: translateY(-50%); display: grid; justify-items: end; gap: 4px; padding-right: 10px; border-right: 2px solid currentColor; white-space: nowrap; text-align: right; }
-.mg-cover-name small { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--mg-c); }
-.mg-cover-name small::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: currentColor; animation: mg-cover-blink 1.1s steps(2, jump-none) infinite; }
-.mg-cover-name b { font: 900 34px/0.9 Arial, Helvetica, sans-serif; letter-spacing: -.03em; color: #f4ede2; text-shadow: 0 2px 18px #0008; }
-.mg-cover-name em { font-style: normal; color: #f38d5a; }
-.mg-cover-name span { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #f4ede2cc; }
-@keyframes mg-cover-lock { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: .65; } }
-@keyframes mg-cover-blink { 0% { opacity: 1; } 100% { opacity: .15; } }
-@media (prefers-reduced-motion: reduce) { .mg-cover-box, .mg-cover-name small::before { animation: none; } }
+/* The 30-second demo: cinema bars, a slate, captions and the end card. */
+.mg-demo { position: absolute; inset: 0; z-index: 30; pointer-events: none; font-family: "Courier New", ui-monospace, monospace; }
+/* The game's own consoles stay on screen during the film, but take no clicks. */
+.mg-hud-film, .mg-hud-film * { pointer-events: none !important; }
+.mg-demo-head { position: absolute; left: 50%; top: 132px; transform: translateX(-50%); display: grid; justify-items: center; gap: 10px; text-align: center; }
+.mg-demo-slate { display: grid; gap: 5px; padding: 9px 18px; background: #0e1413d9; border-top: 2px solid var(--mg-c); backdrop-filter: blur(3px); animation: mg-demo-in .5s ease-out both; }
+.mg-demo-slate b { font: 900 clamp(15px, 1.5vw, 22px)/1 Arial, Helvetica, sans-serif; letter-spacing: .16em; color: #f4ede2; }
+.mg-demo-slate span { font-size: clamp(10px, .8vw, 12px); letter-spacing: .14em; color: var(--mg-c); }
+.mg-storm .mg-demo-slate b { color: #ff5a3c; }
+.mg-demo-clock { position: absolute; left: 50%; bottom: 116px; translate: -50% 0; display: flex; align-items: center; gap: 12px; padding: 4px 4px 6px 12px; font-size: 10px; letter-spacing: .12em; color: #f4ede2cc; white-space: nowrap; background: #0e1413b8; }
+.mg-demo-clock button { padding: 5px 10px; font-size: 10px; background: transparent; border: 1px solid #f4ede255; color: #f4ede2; pointer-events: auto; }
+.mg-demo-clock button:hover { border-color: #f4ede2; }
+.mg-demo-clock button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.mg-demo-progress { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--mg-c); transition: width 1s linear; }
+.mg-demo-line { position: absolute; left: 50%; bottom: 150px; width: max-content; max-width: min(680px, 46vw); margin: 0; padding: 12px 20px 14px; translate: -50% 0; text-align: center; font: 600 clamp(16px, 1.5vw, 23px)/1.3 Arial, Helvetica, sans-serif; letter-spacing: 0; color: #f4ede2; background: #0e1413e6; border-bottom: 2px solid var(--mg-c); backdrop-filter: blur(4px); animation: mg-demo-in .35s ease-out both; }
+.mg-demo-line span { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 7px; font: 700 11px/1 "Courier New", ui-monospace, monospace; letter-spacing: .2em; }
+.mg-demo-sj span { color: var(--mg-c); }
+.mg-demo-you span { color: #f38d5a; }
+.mg-demo-you { font-style: italic; color: #f4ede2cc; }
+/* SuperJar's voice: four bars that bounce while it speaks. */
+.mg-demo-line i { display: inline-flex; align-items: center; gap: 2px; height: 12px; }
+.mg-demo-line u { width: 2px; height: 100%; background: currentColor; text-decoration: none; transform-origin: center; animation: mg-demo-voice .5s ease-in-out infinite alternate; }
+.mg-demo-line u:nth-child(2) { animation-delay: -.18s; }
+.mg-demo-line u:nth-child(3) { animation-delay: -.33s; }
+.mg-demo-line u:nth-child(4) { animation-delay: -.07s; }
+.mg-demo-ping { position: absolute; left: 50%; top: 250px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 10px 18px; font-size: clamp(12px, 1.1vw, 16px); font-weight: 700; letter-spacing: .14em; white-space: nowrap; color: #ff5a3c; background: #0e1413d9; border: 1px solid currentColor; animation: mg-demo-ping .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+.mg-demo-ping i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; animation: mg-cover-blink .5s steps(2, jump-none) infinite; }
+.mg-demo-end { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 14px; padding: 6vh 6vw; text-align: center; background: radial-gradient(ellipse at center, #120d0acc 0%, #120d0af5 70%); animation: mg-demo-fade 1s ease-out both; pointer-events: auto; }
+.mg-demo-end .mg-eyebrow { margin: 0; }
+.mg-demo-end-name { font: 900 clamp(64px, 11vw, 170px)/.85 Arial, Helvetica, sans-serif; letter-spacing: -.055em; color: #f4ede2; }
+.mg-demo-end-name span { color: #f38d5a; }
+.mg-demo-end-line { margin: 6px 0 0; font: 600 clamp(18px, 2vw, 30px)/1.2 Arial, Helvetica, sans-serif; letter-spacing: 0; color: var(--mg-c); }
+.mg-demo-end-note { margin: 0 0 10px; max-width: 620px; font: 15px/1.6 Arial, Helvetica, sans-serif; letter-spacing: 0; color: #e3d7c9; }
+.mg-demo-end .mg-start-actions { justify-content: center; }
+.mg-demo-over .mg-demo-head, .mg-demo-over .mg-demo-clock, .mg-demo-over .mg-demo-line { display: none; }
+@keyframes mg-demo-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes mg-demo-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mg-demo-voice { from { transform: scaleY(.25); } to { transform: scaleY(1); } }
+@keyframes mg-demo-ping { from { opacity: 0; transform: translateX(-50%) scale(.8); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .mg-demo-line u, .mg-demo-ping i { animation: none; } }
+
+/* /demo: a play button over the scene, in place of the start screen. */
+.mg-play { position: absolute; inset: 0; z-index: 30; display: grid; align-content: center; justify-items: center; gap: 22px; padding: 6vh 6vw; text-align: center; background: radial-gradient(ellipse at center, #120d0a99 0%, #120d0ad9 75%); }
+.mg-play-button { display: grid; place-items: center; width: clamp(96px, 11vw, 148px); aspect-ratio: 1; padding: 0; border: 2px solid #f4ede2; border-radius: 50%; background: #f38d5a; cursor: pointer; transition: transform .2s, background .2s; }
+.mg-play-button:hover { transform: scale(1.06); background: #ffac7f; }
+.mg-play-button:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+.mg-play-button i { width: 0; height: 0; margin-left: 9%; border-style: solid; border-width: clamp(17px, 2vw, 27px) 0 clamp(17px, 2vw, 27px) clamp(28px, 3.3vw, 45px); border-color: transparent transparent transparent #1b1712; }
+.mg-play-title { margin: 0; font: 700 clamp(14px, 1.3vw, 19px)/1.2 Arial, Helvetica, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #f4ede2; }
+.mg-play-title span { color: #f38d5a; }
+.mg-play-links { display: flex; gap: 28px; margin: 0; font: 12px/1 "Courier New", ui-monospace, monospace; letter-spacing: .1em; }
+.mg-play-links a { padding-bottom: 4px; color: #f4ede2cc; border-bottom: 1px solid #f4ede255; }
+.mg-play-links a:hover { color: #f4ede2; border-color: #f4ede2; }
+@media (prefers-reduced-motion: reduce) { .mg-play-button { transition: none; } }

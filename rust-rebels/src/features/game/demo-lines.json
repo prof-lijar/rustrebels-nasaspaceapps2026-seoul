@@ -1,0 +1,66 @@
+[
+  {
+    "id": "narration-01",
+    "from": 0,
+    "to": 2,
+    "who": "NARRATOR",
+    "text": "Hi, we're Rust Rebels from Seoul.",
+    "onScreen": "RUST REBELS · NASA SPACE APPS 2026"
+  },
+  {
+    "id": "narration-02",
+    "from": 2,
+    "to": 5,
+    "who": "NARRATOR",
+    "text": "Mars maps are months old. Mars changes in hours.",
+    "onScreen": "Challenge: Martian Map"
+  },
+  {
+    "id": "narration-03",
+    "from": 5,
+    "to": 10,
+    "who": "NARRATOR",
+    "text": "Meet SuperJar: the AI scout that updates the Martian map before you walk it.",
+    "onScreen": "SUPERJAR · the AI scout for Mars EVAs"
+  },
+  {
+    "id": "narration-04",
+    "from": 10,
+    "to": 14,
+    "who": "NARRATOR",
+    "text": "Eight sensors and YOLO spot new boulders and soft sand…",
+    "onScreen": "4 new hazards found"
+  },
+  {
+    "id": "narration-05",
+    "from": 14,
+    "to": 17,
+    "who": "NARRATOR",
+    "text": "…redraw the route on real NASA HiRISE terrain…",
+    "onScreen": "Real NASA HiRISE · Jezero crater"
+  },
+  {
+    "id": "narration-06",
+    "from": 17,
+    "to": 20,
+    "who": "NARRATOR",
+    "text": "…and when a real solar storm hits, guide you to shelter.",
+    "onScreen": "Real NASA DONKI alert · Curiosity RAD data"
+  },
+  {
+    "id": "narration-07",
+    "from": 20,
+    "to": 28,
+    "who": "NARRATOR",
+    "text": "It fits on any drone or robot: on Mars, on the Moon, or on Earth. Safer walks, more science.",
+    "onScreen": "Any drone · any robot · any world"
+  },
+  {
+    "id": "narration-08",
+    "from": 28,
+    "to": 30,
+    "who": "NARRATOR",
+    "text": "Walk Mars with SuperJar.",
+    "onScreen": "rust-rebels-mars.vercel.app/app"
+  }
+]
