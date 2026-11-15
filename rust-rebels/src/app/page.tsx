@@ -36,21 +36,16 @@ export default function Home() {
           <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Marswalk · NASA terrain</span></div>
         </section>
 
-        <section className="section section-superjar" id="superjar" aria-labelledby="superjar-title">
-          <p className="eyebrow">SuperJar / Beyond Mars</p>
-          <div className="superjar-story">
-            <div>
-            <h2 id="superjar-title">Your device.<br />Your AI companion.</h2>
-            <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices.</p>
-            <p className="superjar-context">Marswalk is our Mars demonstration. The wider idea is simple: install an AI companion where the work happens, give it a task, and let it help you get things done.</p>
-            <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <span aria-hidden="true">↗</span></a>
-            </div>
-            <figure className="superjar-poster">
-              <a href="/images/rust-rebels-poster.png" target="_blank" rel="noopener noreferrer" aria-label="View the Rust Rebels mission poster at full size">
-                <Image src="/images/rust-rebels-poster.png" alt="Rust Rebels Mars expedition concept poster with two astronauts and the companions SuperJar and Rocky" width={1024} height={1536} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 35vw, 24vw" />
-              </a>
-              <figcaption>Our Mars mission poster · AI-generated concept artwork</figcaption>
-            </figure>
+        <section className="section" id="watch" aria-labelledby="watch-title">
+          <p className="eyebrow">30-second demo</p>
+          <div>
+            <h2 id="watch-title">Watch Marswalk<br />in 30 seconds.</h2>
+            <p>SuperJar scouts the route, scans a boulder and leads the astronaut to shelter from a solar storm.</p>
+            <Link className="demo-card" href="/demo" aria-label="Watch the 30-second demo">
+              <Image src="/images/ppt/02-superjar-scouting.jpg" alt="" width={1920} height={1080} sizes="(max-width: 640px) 88vw, 60vw" />
+              <span className="demo-card-play" aria-hidden="true">▶</span>
+              <span className="demo-card-label">Play the demo · 0:30</span>
+            </Link>
           </div>
         </section>
 
@@ -214,6 +209,24 @@ export default function Home() {
                 sizes="(max-width: 640px) 88vw, 36vw"
               />
               <figcaption>Li Jar and Dr. Amar Prasad Gupta · Rust Rebels, Seoul</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section className="section section-superjar" id="superjar" aria-labelledby="superjar-title">
+          <p className="eyebrow">SuperJar / Beyond Mars</p>
+          <div className="superjar-story">
+            <div>
+            <h2 id="superjar-title">Your device.<br />Your AI companion.</h2>
+            <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices.</p>
+            <p className="superjar-context">Marswalk is our Mars demonstration. The wider idea is simple: install an AI companion where the work happens, give it a task, and let it help you get things done.</p>
+            <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <span aria-hidden="true">↗</span></a>
+            </div>
+            <figure className="superjar-poster">
+              <a href="/images/rust-rebels-poster.png" target="_blank" rel="noopener noreferrer" aria-label="View the Rust Rebels mission poster at full size">
+                <Image src="/images/rust-rebels-poster.png" alt="Rust Rebels Mars expedition concept poster with two astronauts and the companions SuperJar and Rocky" width={1024} height={1536} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 35vw, 24vw" />
+              </a>
+              <figcaption>Our Mars mission poster · AI-generated concept artwork</figcaption>
             </figure>
           </div>
         </section>
