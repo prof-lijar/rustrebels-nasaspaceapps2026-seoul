@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { links } from "@/lib/content";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowOut } from "@/components/icons";
 
 export type Slide = { src: string; alt: string };
 
@@ -137,7 +138,7 @@ export function SlideDeck({ slides, title, pdfHref }: Props) {
         </a>
         {" · "}
         <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">
-          Explore SuperJar <span aria-hidden="true">↗</span>
+          Explore SuperJar <ArrowOut />
         </a>
       </p>
 

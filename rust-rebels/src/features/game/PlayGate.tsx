@@ -5,6 +5,7 @@ import Link from "next/link";
 import { links } from "@/lib/content";
 import { useState, useSyncExternalStore } from "react";
 import "./play-gate.css";
+import { ArrowOut } from "@/components/icons";
 
 /** Marswalk needs a keyboard, a mouse and a wide screen. Anything narrower, or touch only, gets the film instead. */
 const SMALL_SCREEN = "(max-width: 899px), (hover: none) and (pointer: coarse)";
@@ -79,7 +80,7 @@ function SmallScreen() {
             {copied ? "Link copied" : "Send the link to my computer"}<span aria-hidden="true">→</span>
           </button>
           <Link href="/#marswalk" className="pg-secondary">See the app screen by screen</Link>
-          <a href={links.superjar} className="pg-secondary" target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com ↗</a>
+          <a href={links.superjar} className="pg-secondary" target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <ArrowOut /></a>
         </div>
       </section>
     </main>

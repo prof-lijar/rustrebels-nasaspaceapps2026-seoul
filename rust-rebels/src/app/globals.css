@@ -187,7 +187,7 @@ h2 { margin: 0 0 28px; font-size: clamp(32px, 3.5vw, 54px); line-height: 1.1; le
   .hero-shade { background: linear-gradient(0deg, #12110fe8, transparent 100px, transparent 340px, #161511 440px); }
   .hero-caption { left: 6%; right: 6%; font-size: 10px; }
   .crew-grid { grid-template-columns: 1fr; gap: 36px; }
-  .crew-photo { width: 100%; justify-self: center; }
+  .crew-photo { width: 100%; justify-self: center; order: -1; }
   .superjar-story { grid-template-columns: 1fr; gap: 32px; }
   .stat-grid, .pipeline, .card-grid, .timeline, .view-grid, .callout-grid { grid-template-columns: 1fr; }
   .hazard-list { grid-template-columns: 1fr 1fr; }

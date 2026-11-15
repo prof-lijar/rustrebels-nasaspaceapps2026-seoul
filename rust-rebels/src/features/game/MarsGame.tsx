@@ -8,6 +8,7 @@ import { SUITS, type SuitId } from "./suits";
 import { DEMO_LENGTH, type DemoUi } from "./demo";
 import { MarsEngine, type Crew, type DroneMode, type HudState, type RoverMode, type ViewMode } from "./engine";
 import "./game.css";
+import { ArrowOut } from "@/components/icons";
 
 const VIEWS: { id: ViewMode; key: string; label: string }[] = [
   { id: "fpv", key: "1", label: "First person" },
@@ -424,7 +425,7 @@ export function MarsGame({ film = false }: { film?: boolean }) {
               <div className="mg-demo-end-name">SUPER<span>JAR</span></div>
               <p className="mg-demo-end-line">Go and experience it at the link below.</p>
               <p className="mg-demo-end-note">rust-rebels-mars.vercel.app/app</p>
-              <p className="mg-demo-end-note"><a href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com ↗</a></p>
+              <p className="mg-demo-end-note"><a href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <ArrowOut /></a></p>
               <div className="mg-start-actions">
                 <button type="button" className="mg-primary" onClick={() => begin(false)}>Start the EVA</button>
                 <button type="button" onClick={playDemo}>Replay</button>
