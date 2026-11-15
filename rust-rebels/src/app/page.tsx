@@ -6,24 +6,25 @@ import { deck } from "@/lib/deck";
 import { HeroScene } from "@/components/hero-scene";
 import { appTour, crew, datasets, demoViews, hazards, links, payload, pipeline, stack, stats, stormSteps, waterVest, xrayLink } from "@/lib/content";
 import { ArrowOut, PlayIcon } from "@/components/icons";
+import { SiteHeader } from "@/components/site-header";
 
 export default function Home() {
   return (
     <>
       <a className="skip-link" href="#main">Skip to content</a>
-      <header className="site-header">
+      <SiteHeader>
         <a className="wordmark" href="#" aria-label="Rust Rebels home">RR<span> / </span>RUST REBELS</a>
         <nav aria-label="Main navigation">
-          <a href="#marswalk">App</a>
-          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar <ArrowOut /></a>
+          <Link href="/app">App</Link>
+          <Link href="/demo">Demo</Link>
           <a href="#deck">Deck</a>
           <a href="#problem">Problem</a>
           <a href="#system">System</a>
           <a href="#storm">Storm</a>
-          <Link href="/demo">Demo</Link>
           <a href="#crew">Crew</a>
+          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar <ArrowOut /></a>
         </nav>
-      </header>
+      </SiteHeader>
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
           <HeroScene />
