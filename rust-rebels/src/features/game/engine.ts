@@ -1076,7 +1076,7 @@ export class MarsEngine {
       this.yaw += d * Math.min(1, dt * 3.5);
       this.pitch += (-0.08 - this.pitch) * Math.min(1, dt * 2);
       fwd = 1;
-      sprint = true; // auto-walk runs, to keep the story short
+      sprint = this.phase === "storm"; // auto-walk walks; it only runs for shelter once the storm hits
     } else if (this.control === "astronaut") {
       const k = this.keys;
       fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
