@@ -35,8 +35,8 @@ An astronaut on Mars walks through a radiation field with an old map.
 
 | | |
 | --- | --- |
-| ![SuperJar flying the route ahead of the astronaut](rust-rebels/public/images/ppt/02-superjar-scouting.jpg) **1. Scout.** SuperJar flies the route and flags what the base map does not show. | ![Mission map with the route bending around flagged hazards](rust-rebels/public/images/ppt/08-route-map-expanded.jpg) **2. Re-plan.** The route bends around new hazards and any slope over 25°. |
-| ![Third-person view of the astronaut walking with radiation and suit panels](rust-rebels/public/images/ppt/03-walk-third-person.jpg) **3. Walk.** Real terrain, Mars walking pace, live dose rate. | ![Red solar particle event alert as the astronaut runs to the rover](rust-rebels/public/images/ppt/13-solar-storm.jpg) **4. Survive.** A real 2017 solar storm is replayed; the rover drives in as shelter. |
+| ![SuperJar hovering over a boulder it has flagged with a red ring](rust-rebels/public/images/ppt/10-superjar-pilot-third-person.jpg) **1. Scout.** SuperJar flies the route and flags what the base map does not show. | ![Mission map: the orbital image of the delta front with the route and flagged hazards](rust-rebels/public/images/ppt/07-mission-map.jpg) **2. Re-plan.** On the mission map the route bends around new hazards and any slope over 25°. |
+| ![Third-person view of the astronaut walking with radiation and suit panels](rust-rebels/public/images/ppt/03-walk-third-person.jpg) **3. Walk.** Real terrain, Mars walking pace, live dose rate. | ![The astronaut plugged into the rover inside the marked shelter column, with the storm debrief showing dose and peak rate](rust-rebels/public/images/ppt/14-sheltered.jpg) **4. Survive.** A real 2017 solar storm is replayed; the rover drives in as shelter. |
 
 ## What you can do in the demo
 
@@ -127,8 +127,9 @@ Built with Next.js, TypeScript and three.js. No game engine and no plugin. Data 
 
 | Member | Role |
 | --- | --- |
-| Li Jar | Engineer · KAIST OverEdge |
-| Dr. Amar | Researcher · radiation, nuclear and X-ray physics · KAIST |
+| Li Jar | Engineer, KAIST OverEdge |
+| Dr. Amar | Radiation and X-ray physics, KAIST |
+| SuperJar | AI scout drone |
 
 ## Use of AI
 
