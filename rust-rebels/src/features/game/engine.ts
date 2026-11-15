@@ -4,6 +4,7 @@
 
 import * as THREE from "three";
 import { loadSuit, measureSuit, strideLength, SUITS, type LoadedSuit, type SuitId } from "./suits";
+import { createDemo, type DemoFrame, type DemoUi } from "./demo";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CELL, GRID, MAX_SLOPE_DEG, SITE_M, World, pathLength, pointAlong, progressAlong, solveRoute, type Blocker, type TerrainMeta, type Vec2 } from "./world";
@@ -25,6 +26,8 @@ const WALK = 3.4 / 3.6; // 0.94 m/s
 const SPRINT = 3.0 * Math.sqrt(MARS_G / 9.81); // 1.85 m/s
 const CLOCK_RATE = 60; // mission seconds per real second
 const STORM_REPLAY = 600; // RAD seconds per real second during the storm
+const LIDAR_SIDE = 40; // range points along each side of the film's lidar scan
+const DEMO_STORM_REPLAY = 4200; // the same, in the film's storm shot: onset to peak in about five seconds
 const STORM_AT_PROGRESS = 0.3;
 const SCOUT_SPEED = 80;
 const SENSOR_RANGE = 70;
@@ -153,6 +156,8 @@ export class MarsEngine {
   private raf = 0;
   private last = 0;
   private disposed = false;
+  private animationPaused = false;
+  private initialized = false;
   private cleanup: (() => void)[] = [];
 
   // player
@@ -178,6 +183,9 @@ export class MarsEngine {
   // Start screen: the astronaut stands on the right of the picture, walking on the spot.
   private showcase = false;
   private coverTag?: HTMLDivElement;
+  private demo?: { at: (t: number) => DemoFrame; t: number; frame: DemoFrame; sent: string; suit: SuitId; route: Vec2[]; fog: THREE.Color; top: THREE.Color; horizon: THREE.Color };
+  private onDemo?: (ui: DemoUi | null) => void;
+  private lidar?: { group: THREE.Group; cloud: THREE.Points; beams: THREE.LineSegments; at: Float32Array };
   private suitPopAt = -10;
   private suitCache = new Map<SuitId, Promise<LoadedSuit>>();
   private view: ViewMode = "tpv";
@@ -275,6 +283,7 @@ export class MarsEngine {
     private minimap: HTMLCanvasElement,
     private onHud: (s: HudState) => void,
     private onProgress: (msg: string) => void,
+    private options: { showcaseOnly?: boolean } = {},
   ) {}
 
   // --- setup ----------------------------------------------------------------
@@ -334,14 +343,21 @@ export class MarsEngine {
 
     this.onProgress("SuperJar is solving the route");
     this.resetMission();
-    this.bindInput();
+    if (this.options.showcaseOnly) {
+      this.showcase = true;
+      this.soundOn = false;
+      if (this.routeMesh) this.routeMesh.visible = false;
+      this.beacon.visible = false;
+    } else this.bindInput();
+    this.initialized = true;
     this.last = performance.now();
-    this.raf = requestAnimationFrame(this.frame);
+    this.render(0);
+    if (!this.animationPaused) this.raf = requestAnimationFrame(this.frame);
   }
 
   private setupRenderer(): void {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.showcaseOnly ? 1.25 : 1.75));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -351,10 +367,12 @@ export class MarsEngine {
       this.renderer.setSize(w, h);
       this.camera.aspect = w / Math.max(1, h);
       this.camera.updateProjectionMatrix();
+      if (this.initialized && this.animationPaused) this.render(0);
     };
     resize();
-    window.addEventListener("resize", resize);
-    this.cleanup.push(() => window.removeEventListener("resize", resize));
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(this.container);
+    this.cleanup.push(() => resizeObserver.disconnect());
 
     this.scene.fog = new THREE.FogExp2(0xc79a72, 0.00042);
     this.scene.add(new THREE.HemisphereLight(0xf2d2ae, 0x6b4630, 1.15));
@@ -504,16 +522,16 @@ export class MarsEngine {
     };
     this.suitLoader = loader;
     const [rover, heli] = await Promise.allSettled([
-      loader.loadAsync(`${DATA}/models/perseverance.glb`),
+      this.options.showcaseOnly ? Promise.resolve(null) : loader.loadAsync(`${DATA}/models/perseverance.glb`),
       loader.loadAsync(`${DATA}/models/ingenuity.glb`),
       this.setSuit(this.suitWanted),
     ]);
-    if (rover.status === "fulfilled") {
+    if (rover.status === "fulfilled" && rover.value) {
       const r = fit(rover.value.scene, 3.4);
       r.rotation.y = ROVER_MODEL_YAW;
       this.rover.add(r);
       this.rigRover();
-    } else {
+    } else if (!this.options.showcaseOnly) {
       this.rover.add(new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 3), new THREE.MeshStandardMaterial({ color: 0xd8d2c6 })));
     }
     this.scene.add(this.rover);
@@ -587,7 +605,7 @@ export class MarsEngine {
     (this.beacon.material as THREE.MeshBasicMaterial).color.set(0x35e0c2);
 
     this.addMarker(() => new THREE.Vector3(this.goal.x, this.world.heightAt(this.goal.x, this.goal.z) + 4, this.goal.z), "SCIENCE STOP", "mg-mk-goal", () => this.phase !== "storm" && this.phase !== "sheltered");
-    this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map" && this.control !== "superjar");
+    this.addMarker(() => this.drone.position.clone().setY(this.drone.position.y + 2.2), "SUPERJAR", "mg-mk-drone", () => this.view !== "map" && this.control !== "superjar" && !this.demo?.frame.tag);
     this.addMarker(() => new THREE.Vector3(this.pos.x, this.pos.y + 2.5, this.pos.z), "YOU", "mg-mk-goal", () => this.control !== "astronaut" && this.view !== "map");
     this.addMarker(() => new THREE.Vector3(this.roverPos.x, this.world.heightAt(this.roverPos.x, this.roverPos.z) + 3.4, this.roverPos.z), "ROVER", "mg-mk-rover", () => this.view !== "map" && this.control !== "rover" && Math.hypot(this.roverPos.x - this.pos.x, this.roverPos.z - this.pos.z) > 9);
     this.addMarker(() => new THREE.Vector3(this.droneTarget.x, this.world.heightAt(this.droneTarget.x, this.droneTarget.z) + 3, this.droneTarget.z), "SUPERJAR TARGET", "mg-mk-drone", () => this.droneMode === "goto"); // only while it is still on its way
@@ -691,7 +709,7 @@ export class MarsEngine {
   private addMarker(pos: () => THREE.Vector3, text: string, cls: string, show: () => boolean = () => true): Marker {
     const el = document.createElement("div");
     el.className = `mg-marker ${cls}`;
-    this.markerLayer.appendChild(el);
+    if (!this.options.showcaseOnly) this.markerLayer.appendChild(el);
     const mk: Marker = { el, pos: pos(), text, cls, show };
     Object.defineProperty(mk, "pos", { get: pos });
     this.markers.push(mk);
@@ -755,7 +773,7 @@ export class MarsEngine {
     const el = this.renderer.domElement;
     const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
     const down = (e: KeyboardEvent) => {
-      if (e.repeat || typing(e)) return;
+      if (e.repeat || typing(e) || this.demo) return; // the film takes no orders
       const k = e.code;
       this.keys.add(k);
       if (k === "KeyV") this.setView(this.view === "fpv" ? "tpv" : "fpv");
@@ -919,6 +937,17 @@ export class MarsEngine {
     this.showcase = on;
   }
 
+  /** Suspend the decorative scene while off screen or when motion is disabled. */
+  setAnimationPaused(paused: boolean): void {
+    if (this.disposed || this.animationPaused === paused) return;
+    this.animationPaused = paused;
+    cancelAnimationFrame(this.raf);
+    if (!paused && this.initialized) {
+      this.last = performance.now();
+      this.raf = requestAnimationFrame(this.frame);
+    }
+  }
+
   /** Gives the engine a canvas to draw the walking-astronaut preview into, or null to stop. */
   setPreview(canvas: HTMLCanvasElement | null): void {
     const ctx = canvas?.getContext("2d");
@@ -998,10 +1027,211 @@ export class MarsEngine {
   }
   setAutopilot(on: boolean): void { this.autopilot = on; }
 
+  // --- the 30-second demo ----------------------------------------------------
+
+  /** The page hears about each change of caption, slate and shot; null when the demo is over. */
+  setDemoListener(fn: ((ui: DemoUi | null) => void) | undefined): void { this.onDemo = fn; }
+
+  /** Plays the scripted film from the start. The simulation is paused underneath it. */
+  startDemo(): void {
+    this.stopDemo(false);
+    this.resetMission();
+    this.setView("tpv");
+    this.setControl("astronaut");
+    const sky = this.sky?.material as THREE.ShaderMaterial | undefined;
+    const fog = this.scene.fog as THREE.FogExp2;
+    // SuperJar is sent to the first thing on the route that the base map does not show.
+    const target = [...this.hazards].sort((a, b) => progressAlong(this.route, a) - progressAlong(this.route, b))[0];
+    this.buildLidar(target);
+    const at = createDemo({ route: this.route, base: this.base, heightAt: (x, z) => this.world.heightAt(x, z), scanAt: { x: target.x, z: target.z } });
+    this.demo = {
+      at, t: 0, frame: at(0), sent: "", suit: this.suitWanted, route: this.route, fog: fog.color.clone(),
+      top: (sky?.uniforms.top.value as THREE.Color | undefined)?.clone() ?? new THREE.Color(), horizon: (sky?.uniforms.horizon.value as THREE.Color | undefined)?.clone() ?? new THREE.Color(),
+    };
+    void this.setSuit("explorer"); // the film is always shot in the Explorer suit; the player's own choice comes back afterwards
+    this.drone.scale.setScalar(0.6); // close to life size: in the film it is seen next to the astronaut
+    this.roverPose = null;
+    this.stepDemo(0);
+  }
+
+  /** Ends the film and hands back a fresh mission. */
+  stopDemo(reset = true): void {
+    const d = this.demo;
+    if (!d) return;
+    this.demo = undefined;
+    (this.scene.fog as THREE.FogExp2).color.copy(d.fog);
+    const sky = this.sky?.material as THREE.ShaderMaterial | undefined;
+    if (sky) {
+      (sky.uniforms.top.value as THREE.Color).copy(d.top);
+      (sky.uniforms.horizon.value as THREE.Color).copy(d.horizon);
+    }
+    void this.setSuit(d.suit);
+    this.drone.scale.setScalar(1);
+    this.drone.rotation.set(0, 0, 0);
+    if (this.lidar) this.lidar.group.visible = false;
+    this.roverV = 0;
+    this.speed = 0;
+    this.onDemo?.(null);
+    if (reset) this.resetMission();
+  }
+
+  private stepDemo(dt: number): void {
+    const d = this.demo!;
+    const before = d.frame.shot;
+    d.t += dt;
+    const f = (d.frame = d.at(d.t));
+    const ground = (x: number, z: number) => this.world.heightAt(x, z);
+    // Astronaut
+    this.pos.set(f.astro.x, ground(f.astro.x, f.astro.z), f.astro.z);
+    this.yaw = f.astro.yaw;
+    this.grounded = true;
+    this.speed = f.astro.speed;
+    if (f.astro.speed > 0.05) this.walkPhase += (f.astro.speed * dt * Math.PI * 2) / strideLength(f.astro.speed);
+    // Rover: placed by the script, then sat on the ground with its wheels turning as usual.
+    this.roverPos = { x: f.rover.x, z: f.rover.z };
+    this.roverYaw = f.rover.yaw;
+    this.roverV = f.rover.speed;
+    this.roverW = 0;
+    if (f.shot !== before) this.roverPose = null; // a cut: no easing from where it stood in the last shot
+    this.poseRover(dt);
+    // SuperJar
+    this.drone.position.set(f.drone.x, ground(f.drone.x, f.drone.z) + f.drone.up, f.drone.z);
+    this.drone.rotation.set(f.drone.pitch, Math.PI - f.drone.yaw, f.drone.roll, "YXZ");
+    for (const r of this.rotors) r.rotateX(dt * 38);
+    if (f.scan !== null && d.at(d.t - dt).scan === null) this.playLaser();
+    this.sweepLidar(f.scan);
+    // Storm light: the haze and the sky go red.
+    const sky = this.sky?.material as THREE.ShaderMaterial | undefined;
+    (this.scene.fog as THREE.FogExp2).color.copy(d.fog).lerp(new THREE.Color(0xa8351c), f.storm * 0.75);
+    if (sky) {
+      (sky.uniforms.top.value as THREE.Color).copy(d.top).lerp(new THREE.Color(0x4a1408), f.storm * 0.8);
+      (sky.uniforms.horizon.value as THREE.Color).copy(d.horizon).lerp(new THREE.Color(0xd2452a), f.storm * 0.8);
+    }
+    // The game's own consoles stay on screen, so they are kept fed: the mission phase follows the
+    // shot, the dose and vitals keep running, and each spoken line lands in the crew log.
+    this.phase = f.shot < 3 ? "scout" : f.shot === 3 ? "walk" : f.shot === 4 ? "storm" : "sheltered";
+    this.droneMode = f.shot < 3 ? "route" : "follow";
+    this.roverMode = f.shot === 5 ? "hold" : "follow";
+    if (f.shot === 4 && before === 3) {
+      this.syncRoverShelter();
+      this.shelter = this.shelters[0];
+      this.stormT = 0;
+      this.playAlarm();
+      this.say("SOLAR PARTICLE EVENT. Proton rate rising.", "alert");
+    }
+    if (this.shelter?.id === "ROVER") this.syncRoverShelter();
+    // The real event took six hours to peak. The run for shelter lasts five seconds, so the film
+    // plays the same RAD record faster during it: the readout climbs to the peak as SuperJar says it does.
+    if (f.shot === 4) this.stormT += dt * (DEMO_STORM_REPLAY - STORM_REPLAY);
+    this.updateRadiation(dt);
+    this.updateBody(dt);
+    const was = d.sent ? (JSON.parse(d.sent) as DemoUi) : null;
+    if (f.ui.line && f.ui.line.who !== "NARRATOR" && f.ui.line.id !== was?.line?.id) {
+      if (f.ui.line.who === "ASTRONAUT") this.say(f.ui.line.text, "info", "you", "superjar");
+      else this.say(f.ui.line.text, f.shot === 4 ? "alert" : "info");
+    }
+    if (f.ui.ping && f.ui.ping !== was?.ping && f.ui.ping.startsWith("NEW BOULDER")) {
+      // The first change along the route is flagged the way the game flags it: ring, marker, laser ping.
+      const next = this.hazards.filter((h) => !h.found).sort((a, b) => progressAlong(d.route, a) - progressAlong(d.route, b))[0];
+      if (next) this.detect(next);
+    }
+    this.hudAcc += dt;
+    if (this.hudAcc > 0.066) {
+      this.hudAcc = 0;
+      this.onHud(this.snapshot());
+      this.drawMinimap();
+    }
+    const ui = JSON.stringify(f.ui);
+    if (ui !== d.sent) {
+      d.sent = ui;
+      this.onDemo?.(f.ui);
+    }
+  }
+
+  /**
+   * The film's lidar: a square of range points over the scan target, each one dropped onto whatever
+   * is under it (the ground, or the object standing on it). Simulated: the points are read off the
+   * scene's own geometry, not measured.
+   */
+  private buildLidar(h: Hazard): void {
+    if (this.lidar) {
+      this.scene.remove(this.lidar.group);
+      this.lidar.cloud.geometry.dispose();
+      this.lidar.beams.geometry.dispose();
+    }
+    const N = LIDAR_SIDE, half = h.r + 6, step = (half * 2) / (N - 1);
+    h.mesh.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
+    const at = new Float32Array(N * N * 3), tint = new Float32Array(N * N * 3);
+    const low = new THREE.Color(0x35e0c2), high = new THREE.Color(0xffb14a), c = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const x = h.x - half + j * step, z = h.z - half + i * step;
+        const ground = this.world.heightAt(x, z);
+        let y = ground;
+        if (Math.hypot(x - h.x, z - h.z) < h.r + 1) {
+          ray.set(from.set(x, ground + 40, z), down);
+          const hit = ray.intersectObject(h.mesh, true)[0];
+          if (hit) y = Math.max(y, hit.point.y);
+        }
+        const o = (i * N + j) * 3;
+        at[o] = x; at[o + 1] = y + 0.1; at[o + 2] = z;
+        c.copy(low).lerp(high, Math.min(1, (y - ground) / 2.5)); // anything standing proud of the ground shows up warm
+        tint[o] = c.r; tint[o + 1] = c.g; tint[o + 2] = c.b;
+      }
+    }
+    const cloudGeo = new THREE.BufferGeometry();
+    cloudGeo.setAttribute("position", new THREE.BufferAttribute(at, 3));
+    cloudGeo.setAttribute("color", new THREE.BufferAttribute(tint, 3));
+    const cloud = new THREE.Points(cloudGeo, new THREE.PointsMaterial({ size: 0.16, vertexColors: true, fog: false }));
+    const beamGeo = new THREE.BufferGeometry();
+    beamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((N / 2) * 6), 3));
+    const beams = new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: 0x7ff5e0, transparent: true, opacity: 0.6, fog: false }));
+    cloud.frustumCulled = beams.frustumCulled = false;
+    const group = new THREE.Group();
+    group.add(cloud, beams);
+    group.visible = false;
+    this.scene.add(group);
+    this.lidar = { group, cloud, beams, at };
+  }
+
+  /** Draws the sweep so far: the rows already ranged, and the fan of beams on the row being ranged now. */
+  private sweepLidar(k: number | null): void {
+    const l = this.lidar;
+    if (!l) return;
+    l.group.visible = k !== null;
+    if (k === null) return;
+    const N = LIDAR_SIDE, row = Math.min(N - 1, Math.floor(k * N));
+    l.cloud.geometry.setDrawRange(0, (k >= 1 ? N : row + 1) * N);
+    l.beams.visible = k < 1;
+    const seg = l.beams.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const p = this.drone.position;
+    for (let b = 0; b < N / 2; b++) {
+      const o = (row * N + b * 2) * 3;
+      seg.setXYZ(b * 2, p.x, p.y - 0.1, p.z);
+      seg.setXYZ(b * 2 + 1, l.at[o], l.at[o + 1], l.at[o + 2]);
+    }
+    seg.needsUpdate = true;
+  }
+
+  /** Points the camera where the film's current shot wants it. */
+  private aimDemoCamera(cam: THREE.PerspectiveCamera): void {
+    const f = this.demo!.frame, c = f.cam;
+    const floor = this.world.heightAt(c.pos.x, c.pos.z);
+    const y = c.absolute ? c.pos.y : this.pos.y + c.pos.y;
+    cam.position.set(c.pos.x, Math.max(floor + 0.45, y), c.pos.z);
+    cam.lookAt(c.look.x, c.absolute ? c.look.y : this.world.heightAt(c.look.x, c.look.z) + c.look.y, c.look.z);
+    cam.fov = c.fov;
+  }
+
   // --- simulation -----------------------------------------------------------
 
   private frame = (now: number): void => {
-    if (this.disposed) return;
+    if (this.disposed || this.animationPaused) return;
+    if (this.options.showcaseOnly && now - this.last < 1000 / 30) {
+      this.raf = requestAnimationFrame(this.frame);
+      return;
+    }
     const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000)); // the first rAF timestamp can precede init
     this.last = now;
     this.step(dt);
@@ -1011,6 +1241,11 @@ export class MarsEngine {
 
   private step(dt: number): void {
     this.realT += dt;
+    if (this.options.showcaseOnly) {
+      for (const rotor of this.rotors) rotor.rotateX(dt * 38);
+      return;
+    }
+    if (this.demo) return this.stepDemo(dt);
     // An order, or the storm, can take a vehicle out of manual; the view then returns to the astronaut.
     if ((this.control === "rover" && this.roverMode !== "manual") || (this.control === "superjar" && this.droneMode !== "manual")) {
       this.control = "astronaut";
@@ -1892,15 +2127,22 @@ export class MarsEngine {
       cam.lookAt(focus.x, focus.y, focus.z);
       cam.fov = 50;
     }
+    if (this.demo) this.aimDemoCamera(cam);
     if (this.showcase) {
       // Seen from the front, swaying a little, and shifted so the figure stands in the right half
       // of the picture, clear of the start screen's text.
       const w = this.container.clientWidth, h = this.container.clientHeight;
       const around = this.yaw + 0.45 + Math.sin(this.realT * 0.5) * 0.5;
-      cam.position.set(this.pos.x + Math.sin(around) * 5.2, this.pos.y + 1.3, this.pos.z - Math.cos(around) * 5.2);
+      const narrowHero = this.options.showcaseOnly && w / h < 1.1;
+      const distance = narrowHero ? 7.8 : 5.2;
+      cam.position.set(this.pos.x + Math.sin(around) * distance, this.pos.y + 1.3, this.pos.z - Math.cos(around) * distance);
       cam.lookAt(this.pos.x, this.pos.y + 1.3, this.pos.z); // aimed high enough to leave room for SuperJar overhead
       cam.fov = 36;
-      cam.setViewOffset(w, h, -0.24 * w, 0, w, h);
+      cam.setViewOffset(w, h, (narrowHero ? -0.1 : -0.24) * w, 0, w, h);
+    } else if (this.demo && !this.demo.frame.cam.wide) {
+      // The crew panel covers the left of the screen, so the film's picture is nudged right of it.
+      const w = this.container.clientWidth, h = this.container.clientHeight;
+      cam.setViewOffset(w, h, -0.07 * w, 0, w, h);
     } else if (cam.view?.enabled) {
       cam.clearViewOffset();
     }
@@ -1934,8 +2176,9 @@ export class MarsEngine {
       const t = this.realT * 0.7;
       const toCam = new THREE.Vector3(cam.position.x - this.pos.x, 0, cam.position.z - this.pos.z).normalize();
       const side = new THREE.Vector3(-toCam.z, 0, toCam.x);
+      const orbitWidth = this.options.showcaseOnly && this.container.clientWidth <= 640 ? 0.55 : 1.25;
       d.position.set(this.pos.x, this.pos.y + 2.3 + Math.sin(this.realT * 1.9) * 0.06, this.pos.z)
-        .addScaledVector(side, Math.sin(t) * 1.25).addScaledVector(toCam, -0.5 - Math.cos(t) * 0.55);
+        .addScaledVector(side, Math.sin(t) * orbitWidth).addScaledVector(toCam, -0.5 - Math.cos(t) * 0.55);
       const vx = side.x * Math.cos(t) + toCam.x * Math.sin(t) * 0.44, vz = side.z * Math.cos(t) + toCam.z * Math.sin(t) * 0.44;
       d.rotation.set(0.08, Math.atan2(vx, vz), 0, "YXZ"); // nose along the loop
       d.scale.setScalar(0.5); // life size here; in the mission it is drawn larger to read at distance
@@ -1948,29 +2191,36 @@ export class MarsEngine {
       d.visible = shown;
     } else {
       this.renderer.render(this.scene, cam);
-      if (this.coverTag) this.coverTag.style.display = "none";
+      if (this.demo?.frame.tag) this.placeCoverTag(this.drone.position, cam, 0.6);
+      else if (this.coverTag) this.coverTag.style.display = "none";
     }
-    this.placeMarkers();
-    this.updateAudio();
+    if (!this.options.showcaseOnly) {
+      this.placeMarkers();
+      this.updateAudio();
+    }
   }
 
   /** The start screen's name tag for SuperJar: a target box that rides on the helicopter, with its callsign beside it. */
-  private placeCoverTag(at: THREE.Vector3, cam: THREE.PerspectiveCamera): void {
+  private placeCoverTag(at: THREE.Vector3, cam: THREE.PerspectiveCamera, size = 0.5): void {
     if (!this.coverTag) {
       const el = document.createElement("div");
       el.className = "mg-cover-tag";
       el.setAttribute("aria-hidden", "true");
-      el.innerHTML = '<i class="mg-cover-box"></i><i class="mg-cover-line"></i><div class="mg-cover-name"><small>Scout drone · SJ-01 · tracking</small><b>SUPER<em>JAR</em></b><span>flies on 1% of Earth&rsquo;s air</span></div>';
+      el.innerHTML = '<i class="mg-cover-box"></i><i class="mg-cover-line"></i><div class="mg-cover-name"><small>Scout drone · SJ-01 · tracking</small><b>SUPER<em>JAR</em></b><span>SI Scout Companion on Mars</span></div>';
       this.markerLayer.appendChild(el);
       this.coverTag = el;
     }
     const w = this.container.clientWidth, h = this.container.clientHeight;
     const dist = at.distanceTo(cam.position);
-    const v = at.clone().setY(at.y + 0.22).project(cam); // the model's middle sits a little above its origin
-    // Box sized to the helicopter as drawn: 0.5 m either side of its mast.
-    const half = (0.5 / (dist * Math.tan((cam.fov * Math.PI) / 360))) * (h / 2);
+    const v = at.clone().setY(at.y + size * 0.44).project(cam); // the model's middle sits a little above its origin
+    // Box sized to the helicopter as drawn: `size` metres either side of its mast.
+    const half = (size / (dist * Math.tan((cam.fov * Math.PI) / 360))) * (h / 2);
     this.coverTag.style.display = "block";
     this.coverTag.style.setProperty("--half", `${half.toFixed(1)}px`);
+    if (this.options.showcaseOnly) {
+      const x = ((v.x + 1) / 2) * w;
+      this.coverTag.style.setProperty("--label-offset", `${Math.max(120, Math.min(w - 120, x)) - x}px`);
+    }
     this.coverTag.style.transform = `translate(${(((v.x + 1) / 2) * w).toFixed(1)}px, ${(((1 - v.y) / 2) * h).toFixed(1)}px)`;
   }
 
@@ -2130,6 +2380,7 @@ export class MarsEngine {
     for (const a of [this.wind, this.droneHum, this.roverSound, this.laser]) a?.pause();
     void this.audioCtx?.close();
     for (const mk of this.markers) mk.el.remove();
+    this.coverTag?.remove();
     this.renderer?.dispose();
     this.renderer?.domElement.remove();
   }

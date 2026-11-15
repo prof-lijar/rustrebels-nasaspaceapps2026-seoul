@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:3000 for the pitch and http://localhost:3000/app for the game. No environment variables are required.
+Open http://localhost:3000 for the pitch, http://localhost:3000/app for the game and http://localhost:3000/demo for the 30-second demo. No environment variables are required.
 
 ## Commands
 
@@ -27,6 +27,7 @@ Open http://localhost:3000 for the pitch and http://localhost:3000/app for the g
 
 - `src/app/page.tsx`: homepage content and sections
 - `src/app/app/page.tsx`: the Marswalk game at `/app`
+- `src/app/demo/page.tsx`: the 30-second demo at `/demo`; the same game, opened on the film
 - `src/features/game/`: game engine (`engine.ts`, three.js), terrain lookups and route solver (`world.ts`), HUD (`MarsGame.tsx`, `game.css`)
 - `public/draco/`: Draco decoder copied from three.js, needed to load NASA's compressed suit models
 - `public/dataset/`: NASA terrain, radiation and model files the game loads; see `dataset/README.md`
@@ -36,7 +37,7 @@ Open http://localhost:3000 for the pitch and http://localhost:3000/app for the g
 - `src/lib/deck.ts`: slide list and PDF link for the deck viewer
 - `public/images/`: local website assets
 - `public/slides/`, `public/deck/`: rendered deck slides and the source PDF
-- `scripts/render-slides.sh`: re-renders `../docs/RustRebels_MartianMap.pdf` into `public/slides/` (needs `brew install poppler`)
+- `scripts/render-slides.sh`: re-renders `../docs/RustRebels_SuperJar_Marswalk.pdf` into `public/slides/` (needs `brew install poppler`)
 - `next.config.ts`: Next.js configuration
 - `.env.example`: environment variable guidance
 
