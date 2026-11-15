@@ -3,14 +3,17 @@
 :root { --background: #161511; --foreground: #f8f1e5; --accent: #f38d5a; }
 @theme inline { --color-background: var(--background); --color-foreground: var(--foreground); --font-sans: Arial, Helvetica, sans-serif; --font-mono: "Courier New", monospace; }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 2rem; }
+html { scroll-behavior: smooth; scroll-padding-top: 9rem; }
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
 a { color: inherit; text-decoration: none; }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
 ::selection { background: var(--accent); color: var(--background); }
 .skip-link { position: absolute; top: -100px; left: 20px; z-index: 20; padding: 12px; background: var(--foreground); color: var(--background); }
 .skip-link:focus { top: 12px; }
-.site-header { position: absolute; inset: 0 0 auto; z-index: 3; display: flex; justify-content: space-between; align-items: center; padding: 30px 5%; border-bottom: 1px solid #f8f1e526; }
+.site-header { position: fixed; inset: 0 0 auto; z-index: 10; display: flex; justify-content: space-between; align-items: center; padding: 30px 5%; border-bottom: 1px solid #f8f1e526; transition: transform .25s ease, background .25s ease; }
+.site-header[data-scrolled="true"] { background: #161511f2; backdrop-filter: blur(12px); }
+.site-header[data-hidden="true"] { transform: translateY(-100%); }
+.site-header:focus-within { transform: translateY(0); background: #161511f2; }
 .wordmark { font-size: 13px; font-weight: 800; letter-spacing: .06em; }
 .wordmark span { color: var(--accent); margin: 0 12px; }
 nav { display: flex; gap: 32px; font-size: 13px; }
@@ -173,7 +176,7 @@ h2 { margin: 0 0 28px; font-size: clamp(32px, 3.5vw, 54px); line-height: 1.1; le
   .wordmark { font-size: 11px; white-space: nowrap; }
   .wordmark span { margin: 0 5px; }
   nav { gap: 18px; font-size: 12px; width: 100%; overflow-x: auto; }
-  nav a:last-child { display: none; }
+  .site-header nav a { flex-shrink: 0; }
   .hero { min-height: max(680px, 100svh); }
   .hero-content { padding: 140px 6% 430px; }
   .hero-content h1 { font-size: clamp(60px, 16vw, 78px); }
