@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { links } from "@/lib/content";
 import { useState, useSyncExternalStore } from "react";
 import "./play-gate.css";
 
@@ -78,6 +79,7 @@ function SmallScreen() {
             {copied ? "Link copied" : "Send the link to my computer"}<span aria-hidden="true">→</span>
           </button>
           <Link href="/#marswalk" className="pg-secondary">See the app screen by screen</Link>
+          <a href={links.superjar} className="pg-secondary" target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com ↗</a>
         </div>
       </section>
     </main>

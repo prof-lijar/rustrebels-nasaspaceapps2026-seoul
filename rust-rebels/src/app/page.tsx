@@ -14,6 +14,7 @@ export default function Home() {
         <a className="wordmark" href="#" aria-label="Rust Rebels home">RR<span> / </span>RUST REBELS</a>
         <nav aria-label="Main navigation">
           <a href="#marswalk">App</a>
+          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar ↗</a>
           <a href="#deck">Deck</a>
           <a href="#problem">Problem</a>
           <a href="#system">System</a>
@@ -29,10 +30,28 @@ export default function Home() {
           <div className="hero-content">
             <p className="eyebrow">Interplanetary Survival Guide: Martian Map</p>
             <h1 id="hero-title">RUST<br /><span>REBELS.</span></h1>
-            <p className="hero-copy">Science-rich Marswalks. Fewer wrong turns.<br />A scout-first, radiation-aware digital twin for human EVAs.</p>
-            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><Link className="text-link" href="/demo">Watch demo</Link></div>
+            <p className="hero-copy">Marswalk with SuperJar.<br />An AI companion built to do work for you.<br />Here, it scouts Mars before you take a step.</p>
+            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><Link className="text-link" href="/demo">Watch demo</Link><a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar <span aria-hidden="true">↗</span></a></div>
           </div>
           <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Marswalk · NASA terrain</span></div>
+        </section>
+
+        <section className="section section-superjar" id="superjar" aria-labelledby="superjar-title">
+          <p className="eyebrow">SuperJar / Beyond Mars</p>
+          <div className="superjar-story">
+            <div>
+            <h2 id="superjar-title">Your device.<br />Your AI companion.</h2>
+            <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices.</p>
+            <p className="superjar-context">Marswalk is our Mars demonstration. The wider idea is simple: install an AI companion where the work happens, give it a task, and let it help you get things done.</p>
+            <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <span aria-hidden="true">↗</span></a>
+            </div>
+            <figure className="superjar-poster">
+              <a href="/images/rust-rebels-poster.png" target="_blank" rel="noopener noreferrer" aria-label="View the Rust Rebels mission poster at full size">
+                <Image src="/images/rust-rebels-poster.png" alt="Rust Rebels Mars expedition concept poster with two astronauts and the companions SuperJar and Rocky" width={1024} height={1536} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 35vw, 24vw" />
+              </a>
+              <figcaption>Our Mars mission poster · AI-generated concept artwork</figcaption>
+            </figure>
+          </div>
         </section>
 
         <section className="section" id="marswalk" aria-labelledby="marswalk-title">
@@ -186,14 +205,15 @@ export default function Home() {
                 <a className="text-link" href={links.github} target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>
               </p>
             </div>
-            <figure className="crew-poster">
+            <figure className="crew-photo">
               <Image
-                src="/images/rust-rebels-poster.png"
-                alt="Rust Rebels team poster: engineer Li Jar and researcher Dr. Amar in Mars pressure suits with a route-planning tablet, joined by the robots SuperJar and Rocky. Tagline: Science-rich Marswalks. Fewer wrong turns."
-                width={1024}
-                height={1536}
+                src="/images/rust-rebels-team.jpg"
+                alt="The Rust Rebels team with Marswalk and NASA Space Apps on their laptops"
+                width={1920}
+                height={1440}
                 sizes="(max-width: 640px) 88vw, 36vw"
               />
+              <figcaption>Li Jar and Dr. Amar Prasad Gupta · Rust Rebels, Seoul</figcaption>
             </figure>
           </div>
         </section>
