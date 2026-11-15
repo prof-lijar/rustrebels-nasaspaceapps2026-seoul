@@ -230,6 +230,14 @@
 .mg-demo-sj span { color: var(--mg-c); }
 .mg-demo-you span { color: #f38d5a; }
 .mg-demo-you { font-style: italic; color: #f4ede2cc; }
+.mg-demo-narrator { font-style: normal; color: #f4ede2; }
+.mg-team-photo { position: absolute; inset: 0; z-index: 29; visibility: hidden; pointer-events: none; overflow: hidden; background: #120e0b; }
+.mg-team-photo-active { visibility: visible; }
+.mg-team-photo img { object-fit: contain; }
+.mg-team-photo-active img { animation: mg-team-push 2s linear both; }
+.mg-team-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #0005, transparent 30%, transparent 60%, #0009); }
+@keyframes mg-team-push { from { transform: scale(1); } to { transform: scale(1.025); } }
+@media (prefers-reduced-motion: reduce) { .mg-team-photo-active img { animation: none; } }
 /* SuperJar's voice: four bars that bounce while it speaks. */
 .mg-demo-line i { display: inline-flex; align-items: center; gap: 2px; height: 12px; }
 .mg-demo-line u { width: 2px; height: 100%; background: currentColor; text-decoration: none; transform-origin: center; animation: mg-demo-voice .5s ease-in-out infinite alternate; }

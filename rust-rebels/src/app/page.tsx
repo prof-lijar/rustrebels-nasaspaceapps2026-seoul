@@ -5,6 +5,7 @@ import { SlideDeck } from "@/components/slide-deck";
 import { deck } from "@/lib/deck";
 import { HeroScene } from "@/components/hero-scene";
 import { appTour, crew, datasets, demoViews, hazards, links, payload, pipeline, stack, stats, stormSteps, waterVest, xrayLink } from "@/lib/content";
+import { ArrowOut, PlayIcon } from "@/components/icons";
 
 export default function Home() {
   return (
@@ -14,6 +15,7 @@ export default function Home() {
         <a className="wordmark" href="#" aria-label="Rust Rebels home">RR<span> / </span>RUST REBELS</a>
         <nav aria-label="Main navigation">
           <a href="#marswalk">App</a>
+          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar <ArrowOut /></a>
           <a href="#deck">Deck</a>
           <a href="#problem">Problem</a>
           <a href="#system">System</a>
@@ -29,10 +31,23 @@ export default function Home() {
           <div className="hero-content">
             <p className="eyebrow">Interplanetary Survival Guide: Martian Map</p>
             <h1 id="hero-title">RUST<br /><span>REBELS.</span></h1>
-            <p className="hero-copy">Science-rich Marswalks. Fewer wrong turns.<br />A scout-first, radiation-aware digital twin for human EVAs.</p>
-            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a><Link className="text-link" href="/demo">Watch demo</Link></div>
+            <p className="hero-copy">Marswalk with SuperJar.<br />An AI companion built to do work for you.<br />Here, it scouts Mars before you take a step.</p>
+            <div className="hero-actions"><a className="button" href="/app">Play the Marswalk <ArrowOut /></a><Link className="text-link" href="/demo">Watch demo</Link><a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar <ArrowOut /></a></div>
           </div>
           <div className="hero-caption"><span>Jezero Crater · 18.4°N 77.5°E</span><span>Marswalk · NASA terrain</span></div>
+        </section>
+
+        <section className="section" id="watch" aria-labelledby="watch-title">
+          <p className="eyebrow">30-second demo</p>
+          <div>
+            <h2 id="watch-title">Watch Marswalk<br />in 30 seconds.</h2>
+            <p>SuperJar scouts the route, scans a boulder and leads the astronaut to shelter from a solar storm.</p>
+            <Link className="demo-card" href="/demo" aria-label="Watch the 30-second demo">
+              <Image src="/images/ppt/02-superjar-scouting.jpg" alt="" width={1920} height={1080} sizes="(max-width: 640px) 88vw, 60vw" />
+              <span className="demo-card-play"><PlayIcon /></span>
+              <span className="demo-card-label">Play the demo · 0:30</span>
+            </Link>
+          </div>
         </section>
 
         <section className="section" id="marswalk" aria-labelledby="marswalk-title">
@@ -41,7 +56,7 @@ export default function Home() {
             <h2 id="marswalk-title">Marswalk,<br />screen by screen.</h2>
             <p>Six moments from the playable map. Use the arrows to step through, then try it yourself.</p>
             <AppTour slides={appTour} />
-            <a className="text-link" href="/app">Play the Marswalk <span aria-hidden="true">↗</span></a>
+            <a className="text-link" href="/app">Play the Marswalk <ArrowOut /></a>
           </div>
         </section>
 
@@ -51,7 +66,7 @@ export default function Home() {
             <h2 id="deck-title">The pitch, in seven slides.</h2>
             <p>Open the deck, use the arrow keys to move, and press Enter for full-screen presentation mode.</p>
             <SlideDeck slides={deck.slides} title={deck.title} pdfHref={deck.pdfHref} />
-            <Link className="button deck-demo" href="/demo">Watch the 30-second demo <span aria-hidden="true">▶</span></Link>
+            <Link className="button deck-demo" href="/demo">Watch the 30-second demo <PlayIcon /></Link>
           </div>
         </section>
 
@@ -179,20 +194,40 @@ export default function Home() {
                   <li key={c.name}><strong>{c.name}</strong><span>{c.role}</span></li>
                 ))}
               </ul>
-              <p>Two people and one field robot. SuperJar scouts the route, and also guards the cookies.</p>
+              <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices. Marswalk is our Mars demonstration.</p>
               <p className="link-row">
-                <a className="text-link" href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page on Space Apps <span aria-hidden="true">↗</span></a>
-                <a className="text-link" href={links.github} target="_blank" rel="noopener noreferrer">Source on GitHub <span aria-hidden="true">↗</span></a>
+                <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar <ArrowOut /></a>
+                <a className="text-link" href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page on Space Apps <ArrowOut /></a>
+                <a className="text-link" href={links.github} target="_blank" rel="noopener noreferrer">Source on GitHub <ArrowOut /></a>
               </p>
             </div>
-            <figure className="crew-poster">
+            <figure className="crew-photo">
               <Image
-                src="/images/rust-rebels-poster.png"
-                alt="Rust Rebels team poster: engineer Li Jar and researcher Dr. Amar in Mars pressure suits with a route-planning tablet, joined by the robots SuperJar and Rocky. Tagline: Science-rich Marswalks. Fewer wrong turns."
-                width={1024}
-                height={1536}
+                src="/images/rust-rebels-team.jpg"
+                alt="The Rust Rebels team with Marswalk and NASA Space Apps on their laptops"
+                width={1920}
+                height={1440}
                 sizes="(max-width: 640px) 88vw, 36vw"
               />
+              <figcaption>Li Jar and Dr. Amar Prasad Gupta · Rust Rebels, Seoul</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section className="section section-superjar" id="superjar" aria-labelledby="superjar-title">
+          <p className="eyebrow">SuperJar / Beyond Mars</p>
+          <div className="superjar-story">
+            <div>
+            <h2 id="superjar-title">Your device.<br />Your AI companion.</h2>
+            <p>We build SuperJar to do work for people wherever it is installed: on robots, drones and other devices.</p>
+            <p className="superjar-context">Marswalk is our Mars demonstration. The wider idea is simple: install an AI companion where the work happens, give it a task, and let it help you get things done.</p>
+            <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <ArrowOut /></a>
+            </div>
+            <figure className="superjar-poster">
+              <a href="/images/rust-rebels-poster.png" target="_blank" rel="noopener noreferrer" aria-label="View the Rust Rebels mission poster at full size">
+                <Image src="/images/rust-rebels-poster.png" alt="Rust Rebels Mars expedition concept poster with two astronauts and the companions SuperJar and Rocky" width={1024} height={1536} sizes="(max-width: 640px) 88vw, (max-width: 1024px) 35vw, 24vw" />
+              </a>
+              <figcaption>Our Mars mission poster · AI-generated concept artwork</figcaption>
             </figure>
           </div>
         </section>
@@ -200,6 +235,7 @@ export default function Home() {
       <footer className="site-footer">
         <span>RUST REBELS · NASA Space Apps Challenge 2026 · Seoul</span>
         <nav aria-label="External links" className="footer-links">
+          <a href={links.superjar} target="_blank" rel="noopener noreferrer">SuperJar</a>
           <a href={links.challenge} target="_blank" rel="noopener noreferrer">Challenge brief</a>
           <a href={links.teamPage} target="_blank" rel="noopener noreferrer">Team page</a>
           <a href={links.github} target="_blank" rel="noopener noreferrer">GitHub</a>

@@ -1,66 +1,56 @@
 [
   {
-    "id": "narration-01",
+    "id": "narration-v3-01",
     "from": 0,
     "to": 2,
     "who": "NARRATOR",
-    "text": "Hi, we're Rust Rebels from Seoul.",
-    "onScreen": "RUST REBELS · NASA SPACE APPS 2026"
+    "text": "Hi, we're Li Jar and Amar, team Rust Rebels.",
+    "onScreen": "LI JAR · AMAR · TEAM RUST REBELS",
+    "onScreenDetail": ""
   },
   {
-    "id": "narration-02",
+    "id": "narration-v3-02",
     "from": 2,
-    "to": 5,
+    "to": 6,
     "who": "NARRATOR",
-    "text": "Mars maps are months old. Mars changes in hours.",
-    "onScreen": "Challenge: Martian Map"
+    "text": "Mars maps are months old, and on a planet this dangerous, no one knows what changes next.",
+    "onScreen": "Challenge: Martian Map",
+    "onScreenDetail": ""
   },
   {
-    "id": "narration-03",
-    "from": 5,
-    "to": 10,
+    "id": "narration-v3-03",
+    "from": 6,
+    "to": 9,
     "who": "NARRATOR",
-    "text": "Meet SuperJar: the AI scout that updates the Martian map before you walk it.",
-    "onScreen": "SUPERJAR · the AI scout for Mars EVAs"
+    "text": "Meet Marswalk with SuperJar, our AI scout.",
+    "onScreen": "MARSWALK + SUPERJAR",
+    "onScreenDetail": "Certainty in uncertain places"
   },
   {
-    "id": "narration-04",
-    "from": 10,
-    "to": 14,
-    "who": "NARRATOR",
-    "text": "Eight sensors and YOLO spot new boulders and soft sand…",
-    "onScreen": "4 new hazards found"
-  },
-  {
-    "id": "narration-05",
-    "from": 14,
-    "to": 17,
-    "who": "NARRATOR",
-    "text": "…redraw the route on real NASA HiRISE terrain…",
-    "onScreen": "Real NASA HiRISE · Jezero crater"
-  },
-  {
-    "id": "narration-06",
-    "from": 17,
+    "id": "narration-v3-04",
+    "from": 9,
     "to": 20,
     "who": "NARRATOR",
-    "text": "…and when a real solar storm hits, guide you to shelter.",
-    "onScreen": "Real NASA DONKI alert · Curiosity RAD data"
+    "text": "With 8 sensors and YOLO AI on board, it updates the map in real time and warns you of danger ahead: new boulders, soft sand, radiation, a real solar storm, on real NASA terrain.",
+    "onScreen": "8 sensors · YOLO AI · live map",
+    "onScreenDetail": "Real NASA data: HiRISE · Curiosity RAD · DONKI"
   },
   {
-    "id": "narration-07",
+    "id": "narration-v3-05",
     "from": 20,
     "to": 28,
     "who": "NARRATOR",
-    "text": "It fits on any drone or robot: on Mars, on the Moon, or on Earth. Safer walks, more science.",
-    "onScreen": "Any drone · any robot · any world"
+    "text": "Mars, Moon or Earth: install it on any robot or drone, and make things certain in uncertain situations.",
+    "onScreen": "Mars · Moon · Earth",
+    "onScreenDetail": "Any robot, any drone"
   },
   {
-    "id": "narration-08",
+    "id": "narration-v3-06",
     "from": 28,
     "to": 30,
     "who": "NARRATOR",
-    "text": "Walk Mars with SuperJar.",
-    "onScreen": "rust-rebels-mars.vercel.app/app"
+    "text": "Go and experience it at the link below.",
+    "onScreen": "rust-rebels-mars.vercel.app/app",
+    "onScreenDetail": ""
   }
 ]

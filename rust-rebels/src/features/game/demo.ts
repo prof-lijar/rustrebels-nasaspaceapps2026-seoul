@@ -80,7 +80,7 @@ export function createDemo(stage: DemoStage): (t: number) => DemoFrame {
   const scanYaw = facing(S.x, S.z, B.x, B.z);
   const SCAN_UP = 9.5; // hover height over the object, m
 
-  const lines = LINES as { id: string; from: number; to: number; who: DemoSpeaker; text: string; say?: string; onScreen?: string }[];
+  const lines = LINES as { id: string; from: number; to: number; who: DemoSpeaker; text: string; say?: string; onScreen?: string; onScreenDetail?: string }[];
   const finalLine = lines[lines.length - 1];
   const endAt = finalLine?.who === "NARRATOR" ? finalLine.from : T.end;
 
@@ -212,7 +212,7 @@ export function createDemo(stage: DemoStage): (t: number) => DemoFrame {
       ui: {
         shot,
         second: Math.min(DEMO_LENGTH, Math.floor(t)),
-        slate: said?.onScreen ? [said.onScreen, ""] : slate,
+        slate: said?.onScreen ? [said.onScreen, said.onScreenDetail ?? ""] : slate,
         line: said ? { id: said.id, who: said.who, text: said.text, say: said.say ?? said.text } : null,
         ping,
         storm: shot === 4,

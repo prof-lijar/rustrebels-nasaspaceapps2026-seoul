@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { links } from "@/lib/content";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowOut } from "@/components/icons";
 
 export type Slide = { src: string; alt: string };
 
@@ -133,6 +135,10 @@ export function SlideDeck({ slides, title, pdfHref }: Props) {
       <p className="deck-links">
         <a className="text-link" href={pdfHref} download>
           Download PDF <span aria-hidden="true">↓</span>
+        </a>
+        {" · "}
+        <a className="text-link" href={links.superjar} target="_blank" rel="noopener noreferrer">
+          Explore SuperJar <ArrowOut />
         </a>
       </p>
 

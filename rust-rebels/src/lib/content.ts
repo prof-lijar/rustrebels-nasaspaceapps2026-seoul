@@ -76,12 +76,13 @@ export const datasets = [
 
 // Two people and SuperJar.
 export const crew = [
-  { name: "Li Jar", role: "Engineer, KAIST OverEdge" },
-  { name: "Dr. Amar", role: "Radiation and X-ray physics, KAIST" },
+  { name: "Li Jar", role: "AI engineer · Top 25 KAIST OverEdge entrepreneur" },
+  { name: "Dr. Amar Prasad Gupta", role: "KAIST researcher · former Harvard faculty, Department of Radiology" },
   { name: "SuperJar", role: "AI scout drone" },
 ];
 
 export const links = {
+  superjar: "https://super-jar.com/",
   teamPage: "https://www.spaceappschallenge.org/2026/find-a-team/arc-playground/",
   github: "https://github.com/prof-lijar/rustrebels-nasaspaceapps2026-seoul",
   challenge: "https://www.spaceappschallenge.org/2026/challenges/interplanetary-survival-guide-martian-map/",

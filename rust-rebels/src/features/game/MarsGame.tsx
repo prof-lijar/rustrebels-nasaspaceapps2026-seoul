@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { links } from "@/lib/content";
 import { useEffect, useRef, useState } from "react";
 import { SUITS, type SuitId } from "./suits";
 import { DEMO_LENGTH, type DemoUi } from "./demo";
 import { MarsEngine, type Crew, type DroneMode, type HudState, type RoverMode, type ViewMode } from "./engine";
 import "./game.css";
+import { ArrowOut } from "@/components/icons";
 
 const VIEWS: { id: ViewMode; key: string; label: string }[] = [
   { id: "fpv", key: "1", label: "First person" },
@@ -222,6 +225,9 @@ export function MarsGame({ film = false }: { film?: boolean }) {
       <div ref={stage} className="mg-stage" />
       <div ref={markers} className="mg-markers" />
       <div className="mg-visor" aria-hidden="true" />
+      <div className={`mg-team-photo ${demo?.line?.id === "narration-v3-01" ? "mg-team-photo-active" : ""}`} aria-hidden={demo?.line?.id !== "narration-v3-01"}>
+        <Image src="/images/rust-rebels-team.jpg" alt="The Rust Rebels team with Marswalk and NASA Space Apps on their laptops" fill sizes="100vw" preload unoptimized />
+      </div>
 
       <div className={`mg-hud ${started && hud ? "" : "mg-hidden"} ${demo ? "mg-hud-film" : ""}`}>
         <div className="mg-top">
@@ -408,7 +414,7 @@ export function MarsGame({ film = false }: { film?: boolean }) {
           </div>
           {demo.ping && <div key={demo.ping} className="mg-demo-ping"><i aria-hidden="true" />{demo.ping}</div>}
           {demo.line && (
-            <p key={demo.line.text} className={`mg-demo-line mg-demo-${demo.line.who === "SUPERJAR" ? "sj" : "you"}`}>
+            <p key={demo.line.text} className={`mg-demo-line mg-demo-${demo.line.who === "NARRATOR" ? "narrator" : demo.line.who === "SUPERJAR" ? "sj" : "you"}`}>
               {demo.line.who !== "NARRATOR" && <span>{demo.line.who === "SUPERJAR" && <i aria-hidden="true"><u /><u /><u /><u /></i>}{demo.line.who}</span>}
               {demo.line.text}
             </p>
@@ -417,8 +423,9 @@ export function MarsGame({ film = false }: { film?: boolean }) {
             <div className="mg-demo-end">
               <p className="mg-eyebrow">Rust Rebels · NASA Space Apps 2026 · Seoul</p>
               <div className="mg-demo-end-name">SUPER<span>JAR</span></div>
-              <p className="mg-demo-end-line">Walk Mars with SuperJar.</p>
+              <p className="mg-demo-end-line">Go and experience it at the link below.</p>
               <p className="mg-demo-end-note">rust-rebels-mars.vercel.app/app</p>
+              <p className="mg-demo-end-note"><a href={links.superjar} target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <ArrowOut /></a></p>
               <div className="mg-start-actions">
                 <button type="button" className="mg-primary" onClick={() => begin(false)}>Start the EVA</button>
                 <button type="button" onClick={playDemo}>Replay</button>

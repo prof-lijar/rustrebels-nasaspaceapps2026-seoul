@@ -2,12 +2,14 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { links } from "@/lib/content";
 import { useState, useSyncExternalStore } from "react";
 import "./play-gate.css";
+import { ArrowOut } from "@/components/icons";
 
 /** Marswalk needs a keyboard, a mouse and a wide screen. Anything narrower, or touch only, gets the film instead. */
 const SMALL_SCREEN = "(max-width: 899px), (hover: none) and (pointer: coarse)";
-const VIDEO_ID = "zLKyM_PIjeg";
+const VIDEO_ID = "uheFhKE7DDs";
 const VIDEO_SRC = `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&playsinline=1&loop=1&playlist=${VIDEO_ID}&rel=0`;
 
 // The game (three.js and the models) is only downloaded once we know the screen can run it.
@@ -78,6 +80,7 @@ function SmallScreen() {
             {copied ? "Link copied" : "Send the link to my computer"}<span aria-hidden="true">→</span>
           </button>
           <Link href="/#marswalk" className="pg-secondary">See the app screen by screen</Link>
+          <a href={links.superjar} className="pg-secondary" target="_blank" rel="noopener noreferrer">Explore SuperJar · super-jar.com <ArrowOut /></a>
         </div>
       </section>
     </main>

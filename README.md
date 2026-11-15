@@ -8,6 +8,7 @@ NASA Space Apps Challenge 2026 · Seoul · Challenge: [Interplanetary Survival G
 | --- | --- |
 | ▶ **Play it** | **https://rust-rebels-mars.vercel.app/app** (desktop browser, no install) |
 | Pitch site and slide deck | https://rust-rebels-mars.vercel.app |
+| SuperJar website | [super-jar.com](https://super-jar.com/) |
 | Team page | [Rust Rebels on spaceappschallenge.org](https://www.spaceappschallenge.org/2026/find-a-team/arc-playground/) |
 
 [![Marswalk: an astronaut, the SuperJar scout helicopter and the rover on the floor of Jezero crater](rust-rebels/public/images/ppt/01-cover.jpg)](https://rust-rebels-mars.vercel.app/app)
@@ -30,6 +31,8 @@ An astronaut on Mars walks through a radiation field with an old map.
 - **No time to think.** When a solar storm arrives, the astronaut needs one answer fast: where is shelter, and how do I get there?
 
 ## Our answer: scout first, then walk
+
+We build [SuperJar](https://super-jar.com/) to do work for people wherever it is installed: on robots, drones and other devices. Marswalk is our Mars demonstration.
 
 **SuperJar**, a scout helicopter, flies the planned route before the astronaut steps out. What it finds updates a digital twin of the site built from NASA orbital data, and the route is re-planned around every change. During the walk the astronaut sees one display: heading, route, dose rate, suit and the nearest shelter. When a storm hits, the display turns red and leads them to shelter.
 
@@ -93,22 +96,9 @@ The pitch deck describes the full system. The demo builds the part that can be s
 | Radiation awareness | Dose rate from RAD, storm from RAD and DONKI | Timepix3 particle tracking and a 3D dose map |
 | Storm protocol | Alert, red route, rover drives to meet you | Water vest and X-ray backup link |
 
-## Run it yourself
-
-Needs Node.js 24 and pnpm. No environment variables or API keys.
-
-```sh
-git clone https://github.com/prof-lijar/rustrebels-nasaspaceapps2026-seoul.git
-cd rustrebels-nasaspaceapps2026-seoul/rust-rebels
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:3000 for the pitch site and http://localhost:3000/app for the demo.
+## Repository map
 
 Built with Next.js, TypeScript and three.js. No game engine and no plugin. Data preparation is Python (rasterio, NumPy, SciPy, Pillow).
-
-## Repository map
 
 | Path | What is there |
 | --- | --- |
@@ -127,9 +117,9 @@ Built with Next.js, TypeScript and three.js. No game engine and no plugin. Data 
 
 | Member | Role |
 | --- | --- |
-| Li Jar | Engineer, KAIST OverEdge |
-| Dr. Amar | Radiation and X-ray physics, KAIST |
-| SuperJar | AI scout drone |
+| Li Jar | AI engineer · Top 25 KAIST OverEdge entrepreneur |
+| Dr. Amar Prasad Gupta | KAIST researcher · former Harvard faculty, Department of Radiology |
+| [SuperJar](https://super-jar.com/) | AI scout drone |
 
 ## Use of AI
 
